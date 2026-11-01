@@ -31,6 +31,16 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Back up custom Android files
+        run: |
+          mkdir -p /tmp/udt-native-backup
+
+          cp android/app/src/main/AndroidManifest.xml \
+            /tmp/udt-native-backup/AndroidManifest.xml
+
+          cp android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/MainActivity.kt \
+            /tmp/udt-native-backup/MainActivity.kt
+
       - name: Generate Flutter project
         run: |
           flutter create \
@@ -38,6 +48,21 @@ jobs:
             --org com.ultimate.debugging \
             --project-name ultimate_debugging_tool \
             .
+
+      - name: Restore custom Android files
+        run: |
+          mkdir -p android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool
+
+          cp /tmp/udt-native-backup/AndroidManifest.xml \
+            android/app/src/main/AndroidManifest.xml
+
+          cp /tmp/udt-native-backup/MainActivity.kt \
+            android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/MainActivity.kt
+
+      - name: Verify native Android files
+        run: |
+          test -f android/app/src/main/AndroidManifest.xml
+          test -f android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/MainActivity.kt
 
       - name: Get dependencies
         run: flutter pub get
