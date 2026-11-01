@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+import 'screens/usb_manager_screen.dart';
 
 void main() {
   runApp(const UltimateDebuggingTool());
@@ -80,6 +81,7 @@ class DashboardScreen extends StatelessWidget {
                 letterSpacing: 1.5,
               ),
             ),
+
             const SizedBox(height: 22),
 
             _connectionCard(),
@@ -104,43 +106,59 @@ class DashboardScreen extends StatelessWidget {
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
               childAspectRatio: 1.35,
-              children: const [
+              children: [
                 ToolCard(
                   icon: Icons.usb,
                   title: 'USB Manager',
                   subtitle: 'Cable connection',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            const UsbManagerScreen(),
+                      ),
+                    );
+                  },
                 ),
-                ToolCard(
+
+                const ToolCard(
                   icon: Icons.wifi,
                   title: 'Wireless ADB',
                   subtitle: 'Wi-Fi debugging',
                 ),
-                ToolCard(
+
+                const ToolCard(
                   icon: Icons.health_and_safety,
                   title: 'Diagnostics',
                   subtitle: 'Device inspection',
                 ),
-                ToolCard(
+
+                const ToolCard(
                   icon: Icons.apps,
                   title: 'APK Manager',
                   subtitle: 'App management',
                 ),
-                ToolCard(
+
+                const ToolCard(
                   icon: Icons.terminal,
                   title: 'Command Terminal',
                   subtitle: 'ADB commands',
                 ),
-                ToolCard(
+
+                const ToolCard(
                   icon: Icons.build,
                   title: 'Repair Tools',
                   subtitle: 'Repair solutions',
                 ),
-                ToolCard(
+
+                const ToolCard(
                   icon: Icons.folder,
                   title: 'File Manager',
                   subtitle: 'Device files',
                 ),
-                ToolCard(
+
+                const ToolCard(
                   icon: Icons.security,
                   title: 'Security Center',
                   subtitle: 'Security checks',
@@ -303,54 +321,63 @@ class ToolCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
+  final VoidCallback? onTap;
 
   const ToolCard({
     super.key,
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF142238),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: const Color(0xFF263449),
+        child: Ink(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFF142238),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: const Color(0xFF263449),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                color: const Color(0xFF38BDF8),
+                size: 27,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                maxLines: 1,
+                style: const TextStyle(
+                  color: Colors.blueGrey,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            icon,
-            color: const Color(0xFF38BDF8),
-            size: 27,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            maxLines: 1,
-            style: const TextStyle(
-              color: Colors.blueGrey,
-              fontSize: 10,
-            ),
-          ),
-        ],
       ),
     );
   }
