@@ -1,4 +1,5 @@
 
+import 'dart:async';
 import 'package:flutter/services.dart';
 
 class UsbDeviceInfo {
@@ -43,9 +44,37 @@ class UsbDeviceInfo {
   }
 }
 
+class UsbEvent {
+  final String event;
+  final List<UsbDeviceInfo> devices;
+
+  const UsbEvent({
+    required this.event,
+    required this.devices,
+  });
+
+  factory UsbEvent.fromMap(Map<dynamic, dynamic> map) {
+    final rawDevices = map['devices'] as List<dynamic>? ?? [];
+
+    return UsbEvent(
+      event: map['event']?.toString() ?? 'unknown',
+      devices: rawDevices
+          .map(
+            (device) => UsbDeviceInfo.fromMap(
+              Map<dynamic, dynamic>.from(device as Map),
+            ),
+          )
+          .toList(),
+    );
+  }
+}
+
 class UsbService {
   static const MethodChannel _channel =
       MethodChannel('com.ultimate.debugging/usb');
+
+  static const EventChannel _eventChannel =
+      EventChannel('com.ultimate.debugging/usb_events');
 
   Future<bool> isUsbHostSupported() async {
     try {
@@ -54,6 +83,8 @@ class UsbService {
           ) ??
           false;
     } on PlatformException {
+      return false;
+    } on MissingPluginException {
       return false;
     }
   }
@@ -75,6 +106,8 @@ class UsbService {
           .toList();
     } on PlatformException {
       return [];
+    } on MissingPluginException {
+      return [];
     }
   }
 
@@ -87,6 +120,18 @@ class UsbService {
           false;
     } on PlatformException {
       return false;
+    } on MissingPluginException {
+      return false;
     }
+  }
+
+  Stream<UsbEvent> get usbEvents {
+    return _eventChannel
+        .receiveBroadcastStream()
+        .map(
+          (event) => UsbEvent.fromMap(
+            Map<dynamic, dynamic>.from(event as Map),
+          ),
+        );
   }
 }
