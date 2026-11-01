@@ -1,4 +1,5 @@
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/usb_service.dart';
 
@@ -12,22 +13,75 @@ class UsbManagerScreen extends StatefulWidget {
 class _UsbManagerScreenState extends State<UsbManagerScreen> {
   final UsbService _usbService = UsbService();
 
+  StreamSubscription<UsbEvent>? _usbSubscription;
+
   bool _loading = true;
   bool _hostSupported = false;
   String? _error;
+  String? _eventMessage;
+
   List<UsbDeviceInfo> _devices = [];
 
   @override
   void initState() {
     super.initState();
+
+    _listenForUsbEvents();
     _refreshDevices();
   }
 
+  void _listenForUsbEvents() {
+    _usbSubscription = _usbService.usbEvents.listen(
+      (event) {
+        if (!mounted) return;
+
+        String message;
+
+        switch (event.event) {
+          case 'connected':
+            message = 'USB device connected.';
+            break;
+
+          case 'disconnected':
+            message = 'USB device disconnected.';
+            break;
+
+          case 'permission_granted':
+            message = 'USB permission granted.';
+            break;
+
+          case 'permission_denied':
+            message = 'USB permission denied.';
+            break;
+
+          default:
+            message = 'USB status updated.';
+        }
+
+        setState(() {
+          _devices = event.devices;
+          _loading = false;
+          _error = null;
+          _eventMessage = message;
+        });
+      },
+      onError: (error) {
+        if (!mounted) return;
+
+        setState(() {
+          _eventMessage = 'USB event monitoring unavailable.';
+        });
+      },
+    );
+  }
+
   Future<void> _refreshDevices() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
       final supported = await _usbService.isUsbHostSupported();
@@ -54,22 +108,30 @@ class _UsbManagerScreenState extends State<UsbManagerScreen> {
   }
 
   Future<void> _requestPermission(UsbDeviceInfo device) async {
-    final requested =
-        await _usbService.requestPermission(device.deviceName);
+    try {
+      final requested =
+          await _usbService.requestPermission(device.deviceName);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          requested
-              ? 'USB permission request sent. Refresh after responding.'
-              : 'Could not send USB permission request.',
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            requested
+                ? 'USB permission request sent. Respond to the Android prompt.'
+                : 'Could not send USB permission request.',
+          ),
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (!mounted) return;
 
-    await _refreshDevices();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('USB permission error: $e'),
+        ),
+      );
+    }
   }
 
   Widget _buildDeviceCard(UsbDeviceInfo device) {
@@ -146,6 +208,12 @@ class _UsbManagerScreenState extends State<UsbManagerScreen> {
   }
 
   @override
+  void dispose() {
+    _usbSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0B1424),
@@ -174,9 +242,7 @@ class _UsbManagerScreenState extends State<UsbManagerScreen> {
                     color: const Color(0xFF17243A),
                     child: ListTile(
                       leading: Icon(
-                        _hostSupported
-                            ? Icons.usb
-                            : Icons.usb_off,
+                        _hostSupported ? Icons.usb : Icons.usb_off,
                         color: _hostSupported
                             ? Colors.greenAccent
                             : Colors.redAccent,
@@ -194,7 +260,26 @@ class _UsbManagerScreenState extends State<UsbManagerScreen> {
                       ),
                     ),
                   ),
+
+                  if (_eventMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      color: const Color(0xFF20334D),
+                      child: ListTile(
+                        leading: const Icon(
+                          Icons.sync,
+                          color: Colors.lightBlueAccent,
+                        ),
+                        title: Text(
+                          _eventMessage!,
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 20),
+
                   const Text(
                     'CONNECTED USB DEVICES',
                     style: TextStyle(
@@ -203,7 +288,9 @@ class _UsbManagerScreenState extends State<UsbManagerScreen> {
                       letterSpacing: 1.2,
                     ),
                   ),
+
                   const SizedBox(height: 12),
+
                   if (_error != null)
                     Text(
                       _error!,
@@ -231,8 +318,9 @@ class _UsbManagerScreenState extends State<UsbManagerScreen> {
                           ),
                           SizedBox(height: 6),
                           Text(
-                            'Connect a USB device using an OTG adapter, '
-                            'then refresh.',
+                            'Connect a USB device using an OTG adapter. '
+                            'The screen will update when Android reports '
+                            'a connection.',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: Colors.white54),
                           ),
