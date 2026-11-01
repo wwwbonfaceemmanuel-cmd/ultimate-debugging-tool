@@ -2,21 +2,59 @@
 package com.ultimate.debugging.ultimate_debugging_tool
 
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
 
-    private val CHANNEL = "com.ultimate.debugging/usb"
+    private val METHOD_CHANNEL = "com.ultimate.debugging/usb"
+    private val EVENT_CHANNEL = "com.ultimate.debugging/usb_events"
+
     private val ACTION_USB_PERMISSION =
         "com.ultimate.debugging.USB_PERMISSION"
 
     private lateinit var usbManager: UsbManager
+
+    private var eventSink: EventChannel.EventSink? = null
+    private var receiverRegistered = false
+
+    private val usbReceiver = object : BroadcastReceiver() {
+
+        override fun onReceive(context: Context, intent: Intent) {
+
+            when (intent.action) {
+
+                UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                    sendUsbEvent("connected")
+                }
+
+                UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                    sendUsbEvent("disconnected")
+                }
+
+                ACTION_USB_PERMISSION -> {
+                    val granted = intent.getBooleanExtra(
+                        UsbManager.EXTRA_PERMISSION_GRANTED,
+                        false
+                    )
+
+                    sendUsbEvent(
+                        if (granted) "permission_granted"
+                        else "permission_denied"
+                    )
+                }
+            }
+        }
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -25,7 +63,7 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            CHANNEL
+            METHOD_CHANNEL
         ).setMethodCallHandler { call, result ->
 
             when (call.method) {
@@ -34,11 +72,7 @@ class MainActivity : FlutterActivity() {
                     try {
                         result.success(getConnectedUsbDevices())
                     } catch (e: Exception) {
-                        result.error(
-                            "USB_ERROR",
-                            e.message,
-                            null
-                        )
+                        result.error("USB_ERROR", e.message, null)
                     }
                 }
 
@@ -55,8 +89,7 @@ class MainActivity : FlutterActivity() {
                         return@setMethodCallHandler
                     }
 
-                    val device =
-                        usbManager.deviceList[deviceName]
+                    val device = usbManager.deviceList[deviceName]
 
                     if (device == null) {
                         result.error(
@@ -82,8 +115,7 @@ class MainActivity : FlutterActivity() {
                 "isUsbHostSupported" -> {
                     result.success(
                         packageManager.hasSystemFeature(
-                            android.content.pm.PackageManager
-                                .FEATURE_USB_HOST
+                            android.content.pm.PackageManager.FEATURE_USB_HOST
                         )
                     )
                 }
@@ -91,6 +123,68 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            EVENT_CHANNEL
+        ).setStreamHandler(
+            object : EventChannel.StreamHandler {
+
+                override fun onListen(
+                    arguments: Any?,
+                    events: EventChannel.EventSink?
+                ) {
+                    eventSink = events
+                }
+
+                override fun onCancel(arguments: Any?) {
+                    eventSink = null
+                }
+            }
+        )
+    }
+
+    override fun onStart() {
+        super.onStart()
+
+        if (!receiverRegistered) {
+            val filter = IntentFilter().apply {
+                addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+                addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+                addAction(ACTION_USB_PERMISSION)
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(
+                    usbReceiver,
+                    filter,
+                    Context.RECEIVER_NOT_EXPORTED
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(usbReceiver, filter)
+            }
+
+            receiverRegistered = true
+        }
+    }
+
+    override fun onStop() {
+        if (receiverRegistered) {
+            unregisterReceiver(usbReceiver)
+            receiverRegistered = false
+        }
+
+        super.onStop()
+    }
+
+    private fun sendUsbEvent(event: String) {
+        eventSink?.success(
+            mapOf(
+                "event" to event,
+                "devices" to getConnectedUsbDevices()
+            )
+        )
     }
 
     private fun getConnectedUsbDevices(): List<Map<String, Any>> {
@@ -116,9 +210,8 @@ class MainActivity : FlutterActivity() {
 
     private fun requestDevicePermission(device: UsbDevice) {
 
-        val intent = android.content.Intent(
-            ACTION_USB_PERMISSION
-        ).setPackage(packageName)
+        val intent = Intent(ACTION_USB_PERMISSION)
+            .setPackage(packageName)
 
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
