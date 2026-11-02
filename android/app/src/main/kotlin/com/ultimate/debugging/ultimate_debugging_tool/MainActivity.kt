@@ -530,6 +530,134 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    
+private fun connectWirelessAdb(
+    call: io.flutter.plugin.common.MethodCall,
+    result: MethodChannel.Result
+) {
+    val host = call.argument<String>("host")?.trim()
+    val port = call.argument<Number>("port")?.toInt()
+
+    if (host.isNullOrBlank() || port == null || port !in 1..65535) {
+        result.error(
+            "INVALID_ARGUMENTS",
+            "A valid device IP address and TCP port are required.",
+            null
+        )
+        return
+    }
+
+    if (
+        wirelessStatus == "CONNECTED" ||
+        wirelessStatus == "AUTHENTICATION_REQUIRED" ||
+        wirelessStatus == "CONNECTING"
+    ) {
+        result.error(
+            "WIRELESS_BUSY",
+            "A wireless ADB session is already active.",
+            null
+        )
+        return
+    }
+
+    val manager = wirelessManager ?: AdbWirelessManager(
+        authentication = AdbAuthentication(),
+        onStateChanged = { state ->
+            wirelessStatus = state.name
+        }
+    ).also {
+        wirelessManager = it
+    }
+
+    wirelessHost = host
+    wirelessPort = port
+    wirelessStatus = "CONNECTING"
+
+    val resultSent = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    wirelessExecutor.execute {
+        manager.connect(host, port) { info ->
+
+            wirelessStatus = info.state.name
+
+            val isFinalState = when (info.state) {
+                AdbConnection.State.CONNECTED,
+                AdbConnection.State.AUTHENTICATION_REQUIRED,
+                AdbConnection.State.FAILED,
+                AdbConnection.State.CLOSED,
+                AdbConnection.State.DISCONNECTED -> true
+
+                else -> false
+            }
+
+            if (isFinalState && resultSent.compareAndSet(false, true)) {
+                mainHandler.post {
+                    if (info.state == AdbConnection.State.FAILED) {
+                        result.error(
+                            "WIRELESS_CONNECTION_FAILED",
+                            info.error ?: "Wireless ADB connection failed.",
+                            null
+                        )
+                    } else {
+                        result.success(
+                            mapOf(
+                                "status" to info.state.name,
+                                "host" to info.host,
+                                "port" to info.port,
+                                "deviceBanner" to info.deviceBanner,
+                                "features" to info.features,
+                                "error" to info.error
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun getWirelessAdbStatus(): Map<String, Any?> {
+    val info = wirelessManager?.getConnectionInfo()
+
+    return mapOf(
+        "status" to wirelessStatus,
+        "host" to wirelessHost,
+        "port" to wirelessPort,
+        "connected" to (wirelessStatus == "CONNECTED"),
+        "deviceBanner" to info?.deviceBanner,
+        "features" to info?.features,
+        "error" to info?.error
+    )
+}
+
+private fun disconnectWirelessAdb(
+    result: MethodChannel.Result
+) {
+    try {
+        wirelessManager?.disconnect()
+
+        wirelessStatus = "DISCONNECTED"
+        wirelessHost = null
+        wirelessPort = null
+
+        result.success(
+            mapOf(
+                "status" to "DISCONNECTED",
+                "connected" to false
+            )
+        )
+    } catch (error: Exception) {
+        Log.e(TAG, "Wireless ADB disconnect failed", error)
+
+        result.error(
+            "WIRELESS_DISCONNECT_ERROR",
+            error.message ?: "Unable to disconnect wireless ADB.",
+            null
+        )
+    }
+}
+
+
     private fun getAdbKeyFingerprint(
         result: MethodChannel.Result
     ) {
