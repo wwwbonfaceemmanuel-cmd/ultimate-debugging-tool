@@ -12,16 +12,16 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * USB bulk transport for the Android Debug Bridge protocol.
+ * USB bulk transport for Android Debug Bridge.
  *
- * Handles opening the ADB interface, sending and receiving
- * complete ADB packets, and releasing USB resources.
+ * Implements the shared AdbTransport interface so the
+ * same ADB engine can communicate over USB and TCP.
  */
 class AdbUsbTransport(
     private val usbManager: UsbManager,
     private val device: UsbDevice,
     private val interfaceId: Int
-) : AutoCloseable {
+) : AdbTransport {
 
     companion object {
         private const val WRITE_TIMEOUT_MS = 5000
@@ -47,11 +47,10 @@ class AdbUsbTransport(
 
     /**
      * Opens the device and claims its ADB interface.
-     * Call from a background thread.
      */
     @Synchronized
     @Throws(IOException::class)
-    fun open() {
+    override fun open() {
         if (connection != null) {
             throw IOException("USB transport is already open.")
         }
@@ -144,7 +143,7 @@ class AdbUsbTransport(
      * Sends one complete ADB packet.
      */
     @Throws(IOException::class)
-    fun writePacket(packet: AdbProtocol.AdbPacket) {
+    override fun writePacket(packet: AdbProtocol.AdbPacket) {
         synchronized(writeLock) {
             val usbConnection = requireOpenConnection()
             val endpoint = bulkOutEndpoint
@@ -182,13 +181,9 @@ class AdbUsbTransport(
 
     /**
      * Receives one complete ADB packet.
-     *
-     * Reads the header first, then the payload.
-     * A zero USB read timeout allows the phone time to display
-     * and receive approval of its ADB authorisation prompt.
      */
     @Throws(IOException::class)
-    fun readPacket(): AdbProtocol.AdbPacket {
+    override fun readPacket(): AdbProtocol.AdbPacket {
         synchronized(readLock) {
             val usbConnection = requireOpenConnection()
             val endpoint = bulkInEndpoint
@@ -204,9 +199,9 @@ class AdbUsbTransport(
                 .wrap(header)
                 .order(ByteOrder.LITTLE_ENDIAN)
 
-            headerBuffer.int // command
-            headerBuffer.int // arg0
-            headerBuffer.int // arg1
+            headerBuffer.int
+            headerBuffer.int
+            headerBuffer.int
 
             val dataLength = headerBuffer.int
 
@@ -258,7 +253,6 @@ class AdbUsbTransport(
 
     /**
      * Reads exactly the requested number of bytes.
-     * Continues after partial USB transfers.
      */
     @Throws(IOException::class)
     private fun readExact(
@@ -312,9 +306,6 @@ class AdbUsbTransport(
 
     /**
      * Releases the interface and closes the connection.
-     *
-     * This method can run while a read is waiting, allowing
-     * a disconnect or cancellation to release USB resources.
      */
     @Synchronized
     override fun close() {
