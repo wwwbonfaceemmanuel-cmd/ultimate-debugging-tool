@@ -2,20 +2,22 @@
 package com.ultimate.debugging.ultimate_debugging_tool
 
 import java.io.Closeable
+import java.io.IOException
 
 /**
- * Shared transport interface for Android Debug Bridge.
- *
- * USB and wireless TCP transports will implement
- * this interface so they can use the same ADB engine.
+ * Shared transport interface for ADB communication.
+ * Implemented by USB and wireless TCP transports.
  */
 interface AdbTransport : Closeable {
 
+    @Throws(IOException::class)
     fun open()
 
-    fun writePacket(packet: ByteArray)
+    @Throws(IOException::class)
+    fun writePacket(packet: AdbProtocol.AdbPacket)
 
-    fun readPacket(): ByteArray
+    @Throws(IOException::class)
+    fun readPacket(): AdbProtocol.AdbPacket
 
     override fun close()
 }
