@@ -65,11 +65,15 @@ class DashboardScreen extends StatelessWidget {
         ),
       ),
       ToolItem(
-        title: 'Wireless ADB',
-        description: 'Wireless Android debugging tools.',
-        icon: Icons.wifi,
-        color: Colors.cyan,
-      ),
+  title: 'Wireless ADB',
+  description: 'Wireless Android debugging tools.',
+  icon: Icons.wifi,
+  color: Colors.cyan,
+  onTap: () => _openScreen(
+    context,
+    const WirelessAdbScreen(),
+  ),
+),
       ToolItem(
         title: 'Diagnostics',
         description: 'Inspect device information and system status.',
@@ -318,7 +322,7 @@ class DashboardScreen extends StatelessWidget {
 
           StatusItem(
             title: 'Wireless ADB',
-            status: 'Not yet implemented',
+            status: 'Legacy TCP module added',
             color: Colors.orangeAccent,
           ),
 
