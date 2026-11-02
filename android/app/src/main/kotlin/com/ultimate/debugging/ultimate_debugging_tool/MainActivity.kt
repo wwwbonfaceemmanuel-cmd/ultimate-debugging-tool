@@ -792,6 +792,7 @@ private fun disconnectWirelessAdb(
     adbExecutor.shutdownNow()
 
     super.onDestroy()
+    
     }
 
     private fun sendUsbEvent(event: String) {
