@@ -245,6 +245,14 @@ class MainActivity : FlutterActivity() {
                     )
                 }
 
+                "connectWirelessAdb" -> connectWirelessAdb(call, result)
+
+            "getWirelessAdbStatus" -> {
+            result.success(getWirelessAdbStatus())
+          }
+
+         "disconnectWirelessAdb" -> disconnectWirelessAdb(result)
+
                 else -> result.notImplemented()
             }
         }
@@ -775,11 +783,15 @@ private fun disconnectWirelessAdb(
 
     override fun onDestroy() {
 
-        disconnectAdbInternal()
+    disconnectAdbInternal()
 
-        adbExecutor.shutdownNow()
+    wirelessManager?.shutdown()
+    wirelessManager = null
 
-        super.onDestroy()
+    wirelessExecutor.shutdownNow()
+    adbExecutor.shutdownNow()
+
+    super.onDestroy()
     }
 
     private fun sendUsbEvent(event: String) {
