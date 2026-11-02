@@ -14,7 +14,7 @@ class AdbConnectionCancelledException(
 ) : IOException(message, cause)
 
 class AdbConnection(
-    private val transport: AdbUsbTransport,
+    private val transport: AdbTransport,
     private val onStateChanged: ((State) -> Unit)? = null
 ) {
 
