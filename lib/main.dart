@@ -1,6 +1,8 @@
 
 import 'package:flutter/material.dart';
+
 import 'screens/usb_manager_screen.dart';
+import 'screens/adb_manager_screen.dart';
 
 void main() {
   runApp(const UltimateDebuggingTool());
@@ -16,9 +18,9 @@ class UltimateDebuggingTool extends StatelessWidget {
       title: 'Ultimate Debugging Tool',
       theme: ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF080F1D),
+        scaffoldBackgroundColor: const Color(0xFF0B1522),
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF38BDF8),
+          seedColor: Colors.blue,
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
@@ -31,285 +33,300 @@ class UltimateDebuggingTool extends StatelessWidget {
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
 
+  void _openScreen(BuildContext context, Widget screen) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => screen),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final tools = [
+      ToolItem(
+        title: 'USB Manager',
+        description: 'Manage connected USB devices and permissions.',
+        icon: Icons.usb,
+        color: Colors.blue,
+        onTap: () => _openScreen(
+          context,
+          const UsbManagerScreen(),
+        ),
+      ),
+      ToolItem(
+        title: 'ADB Manager',
+        description: 'Detect ADB interfaces and inspect USB endpoints.',
+        icon: Icons.phonelink,
+        color: Colors.green,
+        onTap: () => _openScreen(
+          context,
+          const AdbManagerScreen(),
+        ),
+      ),
+      ToolItem(
+        title: 'Wireless ADB',
+        description: 'Wireless Android debugging tools.',
+        icon: Icons.wifi,
+        color: Colors.cyan,
+      ),
+      ToolItem(
+        title: 'Diagnostics',
+        description: 'Inspect device information and system status.',
+        icon: Icons.monitor_heart,
+        color: Colors.orange,
+      ),
+      ToolItem(
+        title: 'APK Manager',
+        description: 'Android application management tools.',
+        icon: Icons.android,
+        color: Colors.lightGreen,
+      ),
+      ToolItem(
+        title: 'Command Terminal',
+        description: 'Command execution interface.',
+        icon: Icons.terminal,
+        color: Colors.purple,
+      ),
+      ToolItem(
+        title: 'Repair Tools',
+        description: 'Android troubleshooting and repair utilities.',
+        icon: Icons.build,
+        color: Colors.redAccent,
+      ),
+      ToolItem(
+        title: 'File Manager',
+        description: 'Browse and manage accessible files.',
+        icon: Icons.folder,
+        color: Colors.amber,
+      ),
+      ToolItem(
+        title: 'Security Center',
+        description: 'Device security and protection tools.',
+        icon: Icons.security,
+        color: Colors.teal,
+      ),
+    ];
+
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF080F1D),
+        backgroundColor: const Color(0xFF122235),
         title: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'ULTIMATE',
+              'ULTIMATE DEBUGGING TOOL',
               style: TextStyle(
-                fontSize: 19,
                 fontWeight: FontWeight.bold,
-                letterSpacing: 2,
+                fontSize: 17,
               ),
             ),
             Text(
-              'DEBUGGING TOOL',
+              'ANDROID SERVICING WORKSTATION',
               style: TextStyle(
-                color: Color(0xFF38BDF8),
-                fontSize: 12,
-                letterSpacing: 2,
+                fontSize: 10,
+                color: Colors.white60,
+                letterSpacing: 1.2,
               ),
             ),
           ],
         ),
-        actions: const [
-          Padding(
-            padding: EdgeInsets.only(right: 16),
-            child: Icon(
-              Icons.shield_outlined,
-              color: Color(0xFF38BDF8),
-              size: 29,
-            ),
-          ),
-        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'ANDROID SERVICING WORKSTATION',
-              style: TextStyle(
-                color: Colors.blueGrey,
-                fontSize: 10,
-                letterSpacing: 1.5,
-              ),
-            ),
 
-            const SizedBox(height: 22),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildConnectionCard(),
 
-            _connectionCard(),
+              const SizedBox(height: 24),
 
-            const SizedBox(height: 28),
-
-            const Text(
-              'DIAGNOSTIC TOOLS',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                letterSpacing: 1,
-              ),
-            ),
-
-            const SizedBox(height: 15),
-
-            GridView.count(
-              crossAxisCount: 2,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              childAspectRatio: 1.35,
-              children: [
-                ToolCard(
-                  icon: Icons.usb,
-                  title: 'USB Manager',
-                  subtitle: 'Cable connection',
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) =>
-                            const UsbManagerScreen(),
-                      ),
-                    );
-                  },
-                ),
-
-                const ToolCard(
-                  icon: Icons.wifi,
-                  title: 'Wireless ADB',
-                  subtitle: 'Wi-Fi debugging',
-                ),
-
-                const ToolCard(
-                  icon: Icons.health_and_safety,
-                  title: 'Diagnostics',
-                  subtitle: 'Device inspection',
-                ),
-
-                const ToolCard(
-                  icon: Icons.apps,
-                  title: 'APK Manager',
-                  subtitle: 'App management',
-                ),
-
-                const ToolCard(
-                  icon: Icons.terminal,
-                  title: 'Command Terminal',
-                  subtitle: 'ADB commands',
-                ),
-
-                const ToolCard(
-                  icon: Icons.build,
-                  title: 'Repair Tools',
-                  subtitle: 'Repair solutions',
-                ),
-
-                const ToolCard(
-                  icon: Icons.folder,
-                  title: 'File Manager',
-                  subtitle: 'Device files',
-                ),
-
-                const ToolCard(
-                  icon: Icons.security,
-                  title: 'Security Center',
-                  subtitle: 'Security checks',
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 25),
-
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: const Color(0xFF142238),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: const Color(0xFF263449),
-                ),
-              ),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.monitor_heart,
-                        color: Color(0xFF38BDF8),
-                      ),
-                      SizedBox(width: 10),
-                      Text(
-                        'SYSTEM STATUS',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(height: 15),
-                  Text(
-                    'Technician device: Ready',
-                    style: TextStyle(color: Colors.greenAccent),
-                  ),
-                  SizedBox(height: 7),
-                  Text(
-                    'Target device: Not connected',
-                    style: TextStyle(color: Colors.orangeAccent),
-                  ),
-                  SizedBox(height: 7),
-                  Text(
-                    'Debugging engine: Initializing',
-                    style: TextStyle(color: Colors.blueGrey),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 25),
-
-            const Center(
-              child: Text(
-                'ULTIMATE DEBUGGING TOOL • ADVANCED EDITION',
-                textAlign: TextAlign.center,
+              const Text(
+                'SERVICING TOOLS',
                 style: TextStyle(
-                  color: Colors.blueGrey,
-                  fontSize: 9,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
                   letterSpacing: 1,
                 ),
               ),
-            ),
 
-            const SizedBox(height: 20),
-          ],
+              const SizedBox(height: 14),
+
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: tools.length,
+                gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 0.95,
+                ),
+                itemBuilder: (context, index) {
+                  final tool = tools[index];
+
+                  return ToolCard(
+                    title: tool.title,
+                    description: tool.description,
+                    icon: tool.icon,
+                    color: tool.color,
+                    onTap: tool.onTap,
+                  );
+                },
+              ),
+
+              const SizedBox(height: 24),
+
+              _buildSystemStatus(),
+
+              const SizedBox(height: 20),
+
+              const Center(
+                child: Text(
+                  'ULTIMATE DEBUGGING TOOL',
+                  style: TextStyle(
+                    color: Colors.white38,
+                    fontSize: 11,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _connectionCard() {
+  Widget _buildConnectionCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFF142238),
-        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF173B5B),
+            Color(0xFF10243A),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF1E4261),
+          color: Colors.blueAccent.withOpacity(0.35),
         ),
       ),
-      child: Column(
+      child: const Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Row(
             children: [
-              Text(
-                'DEVICE CONNECTION',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
               Icon(
-                Icons.bluetooth_connected,
-                color: Color(0xFF38BDF8),
+                Icons.devices,
+                color: Colors.lightBlueAccent,
+                size: 30,
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Device Connection',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 22),
-          const Center(
-            child: Icon(
-              Icons.phonelink,
-              size: 65,
-              color: Color(0xFF38BDF8),
-            ),
-          ),
-          const SizedBox(height: 15),
-          const Center(
-            child: Text(
-              'No device connected',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Connect another smartphone using USB OTG '
-            'or Wireless Debugging.',
-            textAlign: TextAlign.center,
+
+          SizedBox(height: 12),
+
+          Text(
+            'Connect an Android device using USB OTG or wireless '
+            'debugging to begin servicing.',
             style: TextStyle(
-              color: Colors.blueGrey,
-              fontSize: 12,
+              color: Colors.white70,
+              height: 1.5,
+              fontSize: 13,
             ),
           ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.add_link),
-              label: const Text('CONNECT DEVICE'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF147DB6),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+
+          SizedBox(height: 14),
+
+          Row(
+            children: [
+              Icon(
+                Icons.circle,
+                color: Colors.orangeAccent,
+                size: 10,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Waiting for device connection',
+                style: TextStyle(
+                  color: Colors.orangeAccent,
+                  fontSize: 12,
                 ),
               ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSystemStatus() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF172638),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'SYSTEM STATUS',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.bold,
             ),
+          ),
+
+          SizedBox(height: 16),
+
+          StatusItem(
+            title: 'USB Manager',
+            status: 'Interface available',
+            color: Colors.greenAccent,
+          ),
+
+          SizedBox(height: 12),
+
+          StatusItem(
+            title: 'ADB Manager',
+            status: 'Interface detection module',
+            color: Colors.orangeAccent,
+          ),
+
+          SizedBox(height: 12),
+
+          StatusItem(
+            title: 'Wireless ADB',
+            status: 'Not yet implemented',
+            color: Colors.orangeAccent,
+          ),
+
+          SizedBox(height: 12),
+
+          StatusItem(
+            title: 'Device Connection',
+            status: 'Waiting for device',
+            color: Colors.orangeAccent,
           ),
         ],
       ),
@@ -317,68 +334,155 @@ class DashboardScreen extends StatelessWidget {
   }
 }
 
-class ToolCard extends StatelessWidget {
-  final IconData icon;
+class ToolItem {
   final String title;
-  final String subtitle;
+  final String description;
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const ToolItem({
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.color,
+    this.onTap,
+  });
+}
+
+class ToolCard extends StatelessWidget {
+  final String title;
+  final String description;
+  final IconData icon;
+  final Color color;
   final VoidCallback? onTap;
 
   const ToolCard({
     super.key,
-    required this.icon,
     required this.title,
-    required this.subtitle,
+    required this.description,
+    required this.icon,
+    required this.color,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.transparent,
+      color: const Color(0xFF172638),
+      borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
-        child: Ink(
+        child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: const Color(0xFF142238),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: const Color(0xFF263449),
+              color: Colors.white10,
             ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 icon,
-                color: const Color(0xFF38BDF8),
-                size: 27,
+                color: color,
+                size: 32,
               ),
-              const SizedBox(height: 10),
+
+              const Spacer(),
+
               Text(
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  fontSize: 13,
+                  color: Colors.white,
+                  fontSize: 14,
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(height: 4),
+
+              const SizedBox(height: 6),
+
               Text(
-                subtitle,
-                maxLines: 1,
+                description,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color: Colors.blueGrey,
+                  color: Colors.white60,
                   fontSize: 10,
+                  height: 1.4,
                 ),
+              ),
+
+              const SizedBox(height: 8),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(
+                    onTap == null
+                        ? Icons.lock_outline
+                        : Icons.arrow_forward,
+                    size: 15,
+                    color: onTap == null
+                        ? Colors.white30
+                        : color,
+                  ),
+                ],
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class StatusItem extends StatelessWidget {
+  final String title;
+  final String status;
+  final Color color;
+
+  const StatusItem({
+    super.key,
+    required this.title,
+    required this.status,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(
+          Icons.circle,
+          size: 9,
+          color: color,
+        ),
+
+        const SizedBox(width: 10),
+
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 12,
+            ),
+          ),
+        ),
+
+        Text(
+          status,
+          style: TextStyle(
+            color: color,
+            fontSize: 11,
+          ),
+        ),
+      ],
     );
   }
 }
