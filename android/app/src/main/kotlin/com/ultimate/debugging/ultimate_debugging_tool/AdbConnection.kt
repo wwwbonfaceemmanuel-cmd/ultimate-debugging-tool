@@ -4,13 +4,6 @@ package com.ultimate.debugging.ultimate_debugging_tool
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 
-/**
- * Manages the ADB connection handshake and RSA authentication.
- *
- * USB transport and cryptographic authentication are separate components.
- *
- * This class must run on a background thread because USB operations block.
- */
 class AdbConnection(
     private val transport: AdbUsbTransport
 ) {
@@ -53,41 +46,47 @@ class AdbConnection(
     }
 
     @Volatile
-    var state: State = State.DISCONNECTED
+    var state = State.DISCONNECTED
         private set
 
     @Volatile
-    var negotiatedVersion: Int = 0
+    var negotiatedVersion = 0
         private set
 
     @Volatile
-    var negotiatedMaxDataSize: Int = 0
+    var negotiatedMaxDataSize = 0
         private set
 
     @Volatile
-    var deviceBanner: String = ""
+    var deviceBanner = ""
         private set
 
     @Volatile
     var deviceFeatures: List<String> = emptyList()
         private set
 
+    @Volatile
+    private var cancelled = false
+
+    private val connectionLock = Any()
+
     /**
-     * Starts the ADB handshake without performing RSA authentication.
-     *
-     * Retained for handshake inspection and compatibility.
+     * Starts a basic ADB connection negotiation.
      */
-    @Synchronized
     @Throws(IOException::class)
     fun connect(): HandshakeResult {
+
         beginConnection()
 
         return try {
+            checkNotCancelled()
             sendConnectionRequest()
+            checkNotCancelled()
+
             receiveHandshakeResponse()
+
         } catch (error: Exception) {
-            state = State.FAILED
-            throw asIOException(
+            handleConnectionError(
                 "ADB connection negotiation failed.",
                 error
             )
@@ -95,18 +94,8 @@ class AdbConnection(
     }
 
     /**
-     * Starts the complete ADB handshake and RSA authentication.
-     *
-     * Authentication sequence:
-     * 1. Send CNXN.
-     * 2. Receive AUTH TOKEN.
-     * 3. Send RSA signature.
-     * 4. If challenged again, send the public key.
-     * 5. Wait for a valid CNXN response.
-     *
-     * The target device may display an RSA authorization prompt.
+     * Starts ADB negotiation with RSA authentication.
      */
-    @Synchronized
     @Throws(IOException::class)
     fun connect(
         authentication: AdbAuthentication
@@ -115,9 +104,11 @@ class AdbConnection(
         beginConnection()
 
         return try {
+
             authentication.initialize()
             authentication.resetStage()
 
+            checkNotCancelled()
             sendConnectionRequest()
 
             var signatureSent = false
@@ -126,11 +117,16 @@ class AdbConnection(
 
             while (challengeCount < MAX_AUTH_CHALLENGES) {
 
+                checkNotCancelled()
+
                 val packet = transport.readPacket()
+
+                checkNotCancelled()
 
                 when (packet.command) {
 
                     AdbProtocol.CMD_CNXN -> {
+
                         val result = handleConnectionResponse(packet)
 
                         if (result is HandshakeResult.Connected) {
@@ -143,24 +139,20 @@ class AdbConnection(
                     AdbProtocol.CMD_AUTH -> {
 
                         if (packet.arg0 != AdbProtocol.AUTH_TOKEN) {
-                            state = State.FAILED
-
-                            return HandshakeResult.Rejected(
+                            return reject(
                                 "Unsupported ADB authentication type: ${packet.arg0}"
                             )
                         }
 
                         if (packet.data.size != 20) {
-                            state = State.FAILED
-
-                            return HandshakeResult.Rejected(
+                            return reject(
                                 "The device supplied an invalid authentication token."
                             )
                         }
 
                         challengeCount++
 
-                        state = State.AUTHENTICATION_REQUIRED
+                        updateState(State.AUTHENTICATION_REQUIRED)
 
                         if (!signatureSent) {
 
@@ -169,65 +161,60 @@ class AdbConnection(
                                     packet.data.copyOf()
                                 )
 
+                            checkNotCancelled()
                             transport.writePacket(signaturePacket)
+                            checkNotCancelled()
 
                             signatureSent = true
 
-                            state = State.CONNECTING
+                            updateState(State.CONNECTING)
 
                         } else if (!publicKeySent) {
 
                             val publicKeyPacket =
                                 authentication.createPublicKeyPacket()
 
+                            checkNotCancelled()
                             transport.writePacket(publicKeyPacket)
+                            checkNotCancelled()
 
                             authentication.markPublicKeySent()
 
                             publicKeySent = true
 
-                            state = State.AUTHENTICATION_REQUIRED
+                            updateState(
+                                State.AUTHENTICATION_REQUIRED
+                            )
 
                         } else {
 
-                            state = State.FAILED
-
-                            return HandshakeResult.Rejected(
+                            return reject(
                                 "The device did not accept the supplied ADB public key."
                             )
                         }
                     }
 
                     AdbProtocol.CMD_CLSE -> {
-                        state = State.FAILED
-
-                        return HandshakeResult.Rejected(
+                        return reject(
                             "The device closed the ADB connection."
                         )
                     }
 
                     else -> {
-                        state = State.FAILED
-
-                        return HandshakeResult.Rejected(
+                        return reject(
                             "Unexpected ADB response: " +
-                            AdbProtocol.commandName(packet.command)
+                                AdbProtocol.commandName(packet.command)
                         )
                     }
                 }
             }
 
-            state = State.FAILED
-
-            HandshakeResult.Rejected(
+            reject(
                 "ADB authentication exceeded the maximum challenge attempts."
             )
 
         } catch (error: Exception) {
-
-            state = State.FAILED
-
-            throw asIOException(
+            handleConnectionError(
                 "ADB authentication or connection failed.",
                 error
             )
@@ -235,7 +222,7 @@ class AdbConnection(
     }
 
     /**
-     * Sends the initial host CNXN packet.
+     * Sends the host connection request.
      */
     @Throws(IOException::class)
     private fun sendConnectionRequest() {
@@ -246,63 +233,56 @@ class AdbConnection(
 
         transport.writePacket(
             AdbProtocol.AdbPacket(
-                command = AdbProtocol.CMD_CNXN,
-                arg0 = AdbProtocol.VERSION,
-                arg1 = MAX_DATA_SIZE,
-                data = banner
+                AdbProtocol.CMD_CNXN,
+                AdbProtocol.VERSION,
+                MAX_DATA_SIZE,
+                banner
             )
         )
     }
 
     /**
-     * Receives and interprets a single handshake response.
+     * Receives the initial ADB handshake response.
      */
-    @Synchronized
     @Throws(IOException::class)
     fun receiveHandshakeResponse(): HandshakeResult {
 
+        checkNotCancelled()
+
         val packet = transport.readPacket()
+
+        checkNotCancelled()
 
         return when (packet.command) {
 
-            AdbProtocol.CMD_CNXN -> {
+            AdbProtocol.CMD_CNXN ->
                 handleConnectionResponse(packet)
-            }
 
-            AdbProtocol.CMD_AUTH -> {
+            AdbProtocol.CMD_AUTH ->
                 handleAuthenticationRequest(packet)
-            }
 
-            AdbProtocol.CMD_CLSE -> {
-                state = State.FAILED
+            AdbProtocol.CMD_CLSE ->
+                reject("The device closed the ADB connection.")
 
-                HandshakeResult.Rejected(
-                    "The device closed the ADB connection."
-                )
-            }
-
-            else -> {
-                state = State.FAILED
-
-                HandshakeResult.Rejected(
+            else ->
+                reject(
                     "Unexpected ADB response: " +
-                    AdbProtocol.commandName(packet.command)
+                        AdbProtocol.commandName(packet.command)
                 )
-            }
         }
     }
 
     /**
-     * Processes the device CNXN response.
+     * Processes an accepted connection response.
      */
     private fun handleConnectionResponse(
         packet: AdbProtocol.AdbPacket
     ): HandshakeResult {
 
-        if (packet.arg0 <= 0 || packet.arg1 <= 0) {
-            state = State.FAILED
+        checkNotCancelled()
 
-            return HandshakeResult.Rejected(
+        if (packet.arg0 <= 0 || packet.arg1 <= 0) {
+            return reject(
                 "The device supplied invalid ADB connection parameters."
             )
         }
@@ -321,136 +301,201 @@ class AdbConnection(
 
         deviceFeatures = extractFeatures(deviceBanner)
 
-        state = State.CONNECTED
+        updateState(State.CONNECTED)
 
         return HandshakeResult.Connected(
-            version = negotiatedVersion,
-            maxDataSize = negotiatedMaxDataSize,
-            deviceBanner = deviceBanner,
-            features = deviceFeatures
+            negotiatedVersion,
+            negotiatedMaxDataSize,
+            deviceBanner,
+            deviceFeatures
         )
     }
 
     /**
-     * Detects an authentication challenge without signing it.
+     * Processes an authentication request without
+     * automatically completing authentication.
      */
     private fun handleAuthenticationRequest(
         packet: AdbProtocol.AdbPacket
     ): HandshakeResult {
 
         if (packet.arg0 != AdbProtocol.AUTH_TOKEN) {
-            state = State.FAILED
-
-            return HandshakeResult.Rejected(
+            return reject(
                 "Unsupported ADB authentication message type: ${packet.arg0}"
             )
         }
 
         if (packet.data.size != 20) {
-            state = State.FAILED
-
-            return HandshakeResult.Rejected(
+            return reject(
                 "The device supplied an invalid authentication token."
             )
         }
 
-        state = State.AUTHENTICATION_REQUIRED
+        updateState(State.AUTHENTICATION_REQUIRED)
 
         return HandshakeResult.AuthenticationRequired(
-            authenticationType = packet.arg0,
-            token = packet.data.copyOf()
+            packet.arg0,
+            packet.data.copyOf()
         )
     }
 
     /**
-     * Extracts advertised device features.
+     * Extracts supported features from the device banner.
      */
     private fun extractFeatures(
         banner: String
     ): List<String> {
 
-        val featureSection = banner
+        val section = banner
             .split(';')
             .firstOrNull {
                 it.startsWith("features=")
-            }
-            ?: return emptyList()
+            } ?: return emptyList()
 
-        val value = featureSection.removePrefix("features=")
+        val value = section.removePrefix("features=")
 
         if (value.isBlank()) {
             return emptyList()
         }
 
-        return value.split(',')
+        return value
+            .split(',')
             .map { it.trim() }
             .filter { it.isNotEmpty() }
             .distinct()
     }
 
     /**
-     * Begins a new connection attempt.
+     * Starts a fresh connection attempt.
      */
     private fun beginConnection() {
 
-        if (state == State.CONNECTING) {
-            throw IOException(
-                "An ADB connection attempt is already running."
-            )
+        synchronized(connectionLock) {
+
+            if (state == State.CONNECTING ||
+                state == State.AUTHENTICATION_REQUIRED
+            ) {
+                throw IOException(
+                    "An ADB connection attempt is already running."
+                )
+            }
+
+            if (state == State.CONNECTED) {
+                throw IOException(
+                    "ADB connection is already established."
+                )
+            }
+
+            if (state == State.CLOSED) {
+                throw IOException(
+                    "ADB connection has been closed."
+                )
+            }
+
+            cancelled = false
+
+            negotiatedVersion = 0
+            negotiatedMaxDataSize = 0
+            deviceBanner = ""
+            deviceFeatures = emptyList()
+
+            state = State.CONNECTING
         }
-
-        if (state == State.CONNECTED) {
-            throw IOException(
-                "ADB connection is already established."
-            )
-        }
-
-        if (state == State.CLOSED) {
-            throw IOException(
-                "ADB connection has been closed."
-            )
-        }
-
-        negotiatedVersion = 0
-        negotiatedMaxDataSize = 0
-        deviceBanner = ""
-        deviceFeatures = emptyList()
-
-        state = State.CONNECTING
     }
 
     /**
-     * Reports whether the ADB handshake completed successfully.
+     * Updates the connection state unless cancellation
+     * has already occurred.
+     */
+    private fun updateState(newState: State) {
+
+        synchronized(connectionLock) {
+
+            if (cancelled || state == State.CLOSED) {
+                throw IOException(
+                    "ADB connection was cancelled."
+                )
+            }
+
+            state = newState
+        }
+    }
+
+    /**
+     * Checks whether the current connection was cancelled.
+     */
+    private fun checkNotCancelled() {
+
+        if (cancelled || state == State.CLOSED) {
+            throw IOException(
+                "ADB connection was cancelled."
+            )
+        }
+    }
+
+    /**
+     * Returns a rejected handshake result.
+     */
+    private fun reject(reason: String): HandshakeResult.Rejected {
+
+        updateState(State.FAILED)
+
+        return HandshakeResult.Rejected(reason)
+    }
+
+    /**
+     * Handles errors without overwriting the CLOSED state.
+     */
+    private fun handleConnectionError(
+        message: String,
+        error: Exception
+    ): Nothing {
+
+        synchronized(connectionLock) {
+
+            if (cancelled || state == State.CLOSED) {
+                state = State.CLOSED
+
+                throw IOException(
+                    "ADB connection was cancelled.",
+                    error
+                )
+            }
+
+            state = State.FAILED
+        }
+
+        if (error is IOException) {
+            throw error
+        }
+
+        throw IOException(message, error)
+    }
+
+    /**
+     * Indicates whether the ADB connection is established.
      */
     fun isConnected(): Boolean {
         return state == State.CONNECTED
     }
 
     /**
-     * Closes the underlying USB transport.
+     * Cancels the connection and releases USB resources.
+     *
+     * This method deliberately does not wait for the
+     * connection negotiation lock.
      */
-    @Synchronized
     fun close() {
+
+        synchronized(connectionLock) {
+            cancelled = true
+            state = State.CLOSED
+        }
 
         try {
             transport.close()
-        } finally {
-            state = State.CLOSED
-        }
-    }
-
-    /**
-     * Converts unexpected exceptions into readable IOExceptions.
-     */
-    private fun asIOException(
-        message: String,
-        error: Exception
-    ): IOException {
-
-        return if (error is IOException) {
-            error
-        } else {
-            IOException(message, error)
+        } catch (_: Exception) {
+            // Continue with the closed state.
         }
     }
 }
