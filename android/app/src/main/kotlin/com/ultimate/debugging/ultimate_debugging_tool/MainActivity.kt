@@ -6,7 +6,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.util.Log
@@ -19,12 +21,19 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val TAG = "UltimateDebuggingTool"
+
         private const val METHOD_CHANNEL =
             "com.ultimate.debugging/usb"
+
         private const val EVENT_CHANNEL =
             "com.ultimate.debugging/usb_events"
+
         private const val ACTION_USB_PERMISSION =
             "com.ultimate.debugging.USB_PERMISSION"
+
+        private const val ADB_CLASS = 0xFF
+        private const val ADB_SUBCLASS = 0x42
+        private const val ADB_PROTOCOL = 0x01
     }
 
     private lateinit var usbManager: UsbManager
@@ -93,6 +102,20 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
+                "getAdbInterfaces" -> {
+                    try {
+                        result.success(getAdbInterfaces())
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Unable to inspect ADB interfaces", e)
+
+                        result.error(
+                            "ADB_INTERFACE_ERROR",
+                            e.message ?: "Unable to inspect ADB interfaces",
+                            null
+                        )
+                    }
+                }
+
                 "requestUsbPermission" -> {
 
                     val deviceName =
@@ -156,8 +179,6 @@ class MainActivity : FlutterActivity() {
                     events: EventChannel.EventSink?
                 ) {
                     eventSink = events
-
-                    // Send the current USB device state immediately.
                     sendUsbEvent("snapshot")
                 }
 
@@ -207,15 +228,12 @@ class MainActivity : FlutterActivity() {
     private fun sendUsbEvent(event: String) {
 
         try {
-            val devices = getConnectedUsbDevices()
-
             eventSink?.success(
                 mapOf(
                     "event" to event,
-                    "devices" to devices
+                    "devices" to getConnectedUsbDevices()
                 )
             )
-
         } catch (e: Exception) {
             Log.e(TAG, "Unable to send USB event: $event", e)
 
@@ -245,6 +263,97 @@ class MainActivity : FlutterActivity() {
                 "interfaceCount" to device.interfaceCount,
                 "hasPermission" to usbManager.hasPermission(device)
             )
+        }
+    }
+
+    private fun getAdbInterfaces(): List<Map<String, Any>> {
+
+        val results = mutableListOf<Map<String, Any>>()
+
+        for (device in usbManager.deviceList.values) {
+
+            for (index in 0 until device.interfaceCount) {
+
+                val usbInterface = device.getInterface(index)
+
+                val isAdbInterface =
+                    usbInterface.interfaceClass == ADB_CLASS &&
+                    usbInterface.interfaceSubclass == ADB_SUBCLASS &&
+                    usbInterface.interfaceProtocol == ADB_PROTOCOL
+
+                if (!isAdbInterface) continue
+
+                val endpoints = mutableListOf<Map<String, Any>>()
+
+                for (endpointIndex in 0 until usbInterface.endpointCount) {
+
+                    val endpoint = usbInterface.getEndpoint(endpointIndex)
+
+                    endpoints.add(
+                        mapOf(
+                            "address" to endpoint.address,
+                            "endpointNumber" to endpoint.endpointNumber,
+                            "direction" to getEndpointDirection(endpoint),
+                            "type" to getEndpointType(endpoint),
+                            "maxPacketSize" to endpoint.maxPacketSize
+                        )
+                    )
+                }
+
+                val hasBulkIn = endpoints.any {
+                    it["direction"] == "IN" &&
+                    it["type"] == "BULK"
+                }
+
+                val hasBulkOut = endpoints.any {
+                    it["direction"] == "OUT" &&
+                    it["type"] == "BULK"
+                }
+
+                results.add(
+                    mapOf(
+                        "deviceName" to device.deviceName,
+                        "deviceId" to device.deviceId,
+                        "vendorId" to device.vendorId,
+                        "productId" to device.productId,
+                        "manufacturerName" to
+                            (device.manufacturerName ?: "Unknown"),
+                        "productName" to
+                            (device.productName ?: "Unknown"),
+                        "interfaceId" to usbInterface.id,
+                        "interfaceClass" to usbInterface.interfaceClass,
+                        "interfaceSubclass" to usbInterface.interfaceSubclass,
+                        "interfaceProtocol" to usbInterface.interfaceProtocol,
+                        "hasBulkIn" to hasBulkIn,
+                        "hasBulkOut" to hasBulkOut,
+                        "hasAdbEndpoints" to (hasBulkIn && hasBulkOut),
+                        "hasPermission" to usbManager.hasPermission(device),
+                        "endpoints" to endpoints
+                    )
+                )
+            }
+        }
+
+        return results
+    }
+
+    private fun getEndpointDirection(endpoint: UsbEndpoint): String {
+
+        return when (endpoint.direction) {
+            UsbConstants.USB_DIR_IN -> "IN"
+            UsbConstants.USB_DIR_OUT -> "OUT"
+            else -> "UNKNOWN"
+        }
+    }
+
+    private fun getEndpointType(endpoint: UsbEndpoint): String {
+
+        return when (endpoint.type) {
+            UsbConstants.USB_ENDPOINT_XFER_BULK -> "BULK"
+            UsbConstants.USB_ENDPOINT_XFER_CONTROL -> "CONTROL"
+            UsbConstants.USB_ENDPOINT_XFER_INT -> "INTERRUPT"
+            UsbConstants.USB_ENDPOINT_XFER_ISOC -> "ISOCHRONOUS"
+            else -> "UNKNOWN"
         }
     }
 
