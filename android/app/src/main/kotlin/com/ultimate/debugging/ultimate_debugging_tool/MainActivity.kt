@@ -56,6 +56,15 @@ class MainActivity : FlutterActivity() {
     @Volatile
     private var wirelessManager: AdbWirelessManager? = null
 
+    @Volatile 
+    private var wirelessStatus = "DISCONNECTED"
+
+    @Volatile 
+    private var wirelessHost: String? = null
+
+    @Volatile 
+    private var wirelessPort: Int? = null
+
     @Volatile
     private var adbDeviceName: String? = null
 
