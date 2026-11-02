@@ -52,6 +52,9 @@ class MainActivity : FlutterActivity() {
     private var adbTransport: AdbUsbTransport? = null
 
     @Volatile
+    private var wirelessManager: AdbWirelessManager? = null
+
+    @Volatile
     private var adbDeviceName: String? = null
 
     @Volatile
