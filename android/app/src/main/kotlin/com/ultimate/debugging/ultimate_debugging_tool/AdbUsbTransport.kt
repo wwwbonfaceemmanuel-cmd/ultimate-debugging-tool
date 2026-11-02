@@ -14,14 +14,8 @@ import java.nio.ByteOrder
 /**
  * USB bulk transport for the Android Debug Bridge protocol.
  *
- * This class handles:
- * - Opening an authorized USB device.
- * - Claiming its ADB interface.
- * - Sending ADB packets through Bulk OUT.
- * - Receiving ADB packets through Bulk IN.
- * - Handling partial USB transfers.
- *
- * ADB authentication and connection negotiation are separate stages.
+ * Handles opening the ADB interface, sending and receiving
+ * complete ADB packets, and releasing USB resources.
  */
 class AdbUsbTransport(
     private val usbManager: UsbManager,
@@ -30,21 +24,30 @@ class AdbUsbTransport(
 ) : AutoCloseable {
 
     companion object {
-        private const val USB_TIMEOUT_MS = 5000
+        private const val WRITE_TIMEOUT_MS = 5000
+        private const val READ_TIMEOUT_MS = 0
         private const val MAX_TRANSFER_CHUNK = 16384
     }
 
+    @Volatile
     private var connection: UsbDeviceConnection? = null
+
     private var adbInterface: UsbInterface? = null
     private var bulkInEndpoint: UsbEndpoint? = null
     private var bulkOutEndpoint: UsbEndpoint? = null
+
+    @Volatile
     private var interfaceClaimed = false
-    private var closed = false
+
+    @Volatile
+    private var closed = true
+
+    private val readLock = Any()
+    private val writeLock = Any()
 
     /**
-     * Opens the device and claims its ADB USB interface.
-     *
-     * Call this method from a background thread.
+     * Opens the device and claims its ADB interface.
+     * Call from a background thread.
      */
     @Synchronized
     @Throws(IOException::class)
@@ -74,26 +77,36 @@ class AdbUsbTransport(
         val usbConnection = usbManager.openDevice(device)
             ?: throw IOException("Unable to open USB device.")
 
+        var claimed = false
+
         try {
             if (!usbConnection.claimInterface(selectedInterface, true)) {
                 throw IOException("Unable to claim the ADB USB interface.")
             }
 
-            connection = usbConnection
+            claimed = true
+
             adbInterface = selectedInterface
             bulkInEndpoint = inputEndpoint
             bulkOutEndpoint = outputEndpoint
             interfaceClaimed = true
             closed = false
+            connection = usbConnection
+
         } catch (error: Exception) {
+            if (claimed) {
+                try {
+                    usbConnection.releaseInterface(selectedInterface)
+                } catch (_: Exception) {
+                    // Continue with connection cleanup.
+                }
+            }
+
             usbConnection.close()
             throw error
         }
     }
 
-    /**
-     * Finds the requested standard ADB interface.
-     */
     private fun findAdbInterface(): UsbInterface {
         val selected = (0 until device.interfaceCount)
             .map { device.getInterface(it) }
@@ -104,15 +117,11 @@ class AdbUsbTransport(
                     usbInterface.interfaceProtocol == 0x01
             }
 
-        return selected
-            ?: throw IOException(
-                "The requested standard ADB interface was not found."
-            )
+        return selected ?: throw IOException(
+            "The requested standard ADB interface was not found."
+        )
     }
 
-    /**
-     * Finds a bulk endpoint in the requested direction.
-     */
     private fun findBulkEndpoint(
         usbInterface: UsbInterface,
         direction: Int
@@ -128,126 +137,128 @@ class AdbUsbTransport(
             }
         }
 
-        throw IOException(
-            "Required USB bulk endpoint was not found."
-        )
+        throw IOException("Required USB bulk endpoint was not found.")
     }
 
     /**
      * Sends one complete ADB packet.
-     *
-     * Partial USB writes are handled until the complete packet
-     * has been transmitted.
      */
-    @Synchronized
     @Throws(IOException::class)
     fun writePacket(packet: AdbProtocol.AdbPacket) {
-        val usbConnection = requireOpenConnection()
-        val endpoint = bulkOutEndpoint
-            ?: throw IOException("Bulk OUT endpoint is unavailable.")
+        synchronized(writeLock) {
+            val usbConnection = requireOpenConnection()
+            val endpoint = bulkOutEndpoint
+                ?: throw IOException("Bulk OUT endpoint is unavailable.")
 
-        val bytes = AdbProtocol.encode(packet)
+            val bytes = AdbProtocol.encode(packet)
+            var offset = 0
 
-        var offset = 0
+            while (offset < bytes.size) {
+                ensureOpen()
 
-        while (offset < bytes.size) {
-            val remaining = bytes.size - offset
-            val chunkSize = minOf(remaining, MAX_TRANSFER_CHUNK)
-
-            val written = usbConnection.bulkTransfer(
-                endpoint,
-                bytes,
-                offset,
-                chunkSize,
-                USB_TIMEOUT_MS
-            )
-
-            if (written <= 0) {
-                throw IOException(
-                    "USB bulk write failed or timed out."
+                val chunkSize = minOf(
+                    bytes.size - offset,
+                    MAX_TRANSFER_CHUNK
                 )
-            }
 
-            offset += written
+                val written = usbConnection.bulkTransfer(
+                    endpoint,
+                    bytes,
+                    offset,
+                    chunkSize,
+                    WRITE_TIMEOUT_MS
+                )
+
+                if (written <= 0) {
+                    throw IOException(
+                        "USB bulk write failed, timed out, or the device disconnected."
+                    )
+                }
+
+                offset += written
+            }
         }
     }
 
     /**
      * Receives one complete ADB packet.
      *
-     * Reads the 24-byte ADB header first, then reads the payload
-     * length declared by that header.
+     * Reads the header first, then the payload.
+     * A zero USB read timeout allows the phone time to display
+     * and receive approval of its ADB authorisation prompt.
      */
-    @Synchronized
     @Throws(IOException::class)
     fun readPacket(): AdbProtocol.AdbPacket {
-        val usbConnection = requireOpenConnection()
-        val endpoint = bulkInEndpoint
-            ?: throw IOException("Bulk IN endpoint is unavailable.")
+        synchronized(readLock) {
+            val usbConnection = requireOpenConnection()
+            val endpoint = bulkInEndpoint
+                ?: throw IOException("Bulk IN endpoint is unavailable.")
 
-        val header = readExact(
-            usbConnection,
-            endpoint,
-            AdbProtocol.HEADER_SIZE
-        )
-
-        val headerBuffer = ByteBuffer
-            .wrap(header)
-            .order(ByteOrder.LITTLE_ENDIAN)
-
-        val command = headerBuffer.int
-        val arg0 = headerBuffer.int
-        val arg1 = headerBuffer.int
-        val dataLength = headerBuffer.int
-
-        if (dataLength < 0 || dataLength > AdbProtocol.MAX_DATA_SIZE) {
-            throw IOException("Invalid ADB packet payload length.")
-        }
-
-        val completePacket = ByteArray(
-            AdbProtocol.HEADER_SIZE + dataLength
-        )
-
-        System.arraycopy(
-            header,
-            0,
-            completePacket,
-            0,
-            header.size
-        )
-
-        if (dataLength > 0) {
-            val payload = readExact(
+            val header = readExact(
                 usbConnection,
                 endpoint,
-                dataLength
+                AdbProtocol.HEADER_SIZE
+            )
+
+            val headerBuffer = ByteBuffer
+                .wrap(header)
+                .order(ByteOrder.LITTLE_ENDIAN)
+
+            headerBuffer.int // command
+            headerBuffer.int // arg0
+            headerBuffer.int // arg1
+
+            val dataLength = headerBuffer.int
+
+            if (
+                dataLength < 0 ||
+                dataLength > AdbProtocol.MAX_DATA_SIZE
+            ) {
+                throw IOException("Invalid ADB packet payload length.")
+            }
+
+            val completePacket = ByteArray(
+                AdbProtocol.HEADER_SIZE + dataLength
             )
 
             System.arraycopy(
-                payload,
+                header,
                 0,
                 completePacket,
-                AdbProtocol.HEADER_SIZE,
-                dataLength
+                0,
+                header.size
             )
-        }
 
-        return try {
-            AdbProtocol.decode(completePacket)
-        } catch (error: IllegalArgumentException) {
-            throw IOException(
-                "Received an invalid ADB packet.",
-                error
-            )
+            if (dataLength > 0) {
+                val payload = readExact(
+                    usbConnection,
+                    endpoint,
+                    dataLength
+                )
+
+                System.arraycopy(
+                    payload,
+                    0,
+                    completePacket,
+                    AdbProtocol.HEADER_SIZE,
+                    dataLength
+                )
+            }
+
+            return try {
+                AdbProtocol.decode(completePacket)
+            } catch (error: IllegalArgumentException) {
+                throw IOException(
+                    "Received an invalid ADB packet.",
+                    error
+                )
+            }
         }
     }
 
     /**
      * Reads exactly the requested number of bytes.
-     *
-     * A USB transfer may return fewer bytes than requested.
-     * This method continues reading until the requested amount
-     * has arrived or a transfer fails.
+     * Continues after partial USB transfers.
      */
     @Throws(IOException::class)
     private fun readExact(
@@ -259,9 +270,10 @@ class AdbUsbTransport(
         var offset = 0
 
         while (offset < expectedLength) {
-            val remaining = expectedLength - offset
+            ensureOpen()
+
             val chunkSize = minOf(
-                remaining,
+                expectedLength - offset,
                 MAX_TRANSFER_CHUNK
             )
 
@@ -270,12 +282,12 @@ class AdbUsbTransport(
                 result,
                 offset,
                 chunkSize,
-                USB_TIMEOUT_MS
+                READ_TIMEOUT_MS
             )
 
             if (received <= 0) {
                 throw IOException(
-                    "USB bulk read failed, timed out, or returned no data."
+                    "USB bulk read failed or the device disconnected."
                 )
             }
 
@@ -285,40 +297,55 @@ class AdbUsbTransport(
         return result
     }
 
-    /**
-     * Ensures the transport is open before an operation.
-     */
-    private fun requireOpenConnection(): UsbDeviceConnection {
-        if (closed) {
+    private fun ensureOpen() {
+        if (closed || connection == null) {
             throw IOException("USB transport is closed.")
         }
+    }
+
+    private fun requireOpenConnection(): UsbDeviceConnection {
+        ensureOpen()
 
         return connection
             ?: throw IOException("USB transport has not been opened.")
     }
 
     /**
-     * Releases the claimed interface and closes the connection.
+     * Releases the interface and closes the connection.
+     *
+     * This method can run while a read is waiting, allowing
+     * a disconnect or cancellation to release USB resources.
      */
     @Synchronized
     override fun close() {
         if (closed) return
 
+        closed = true
+
         val usbConnection = connection
-
-        if (usbConnection != null) {
-            if (interfaceClaimed && adbInterface != null) {
-                usbConnection.releaseInterface(adbInterface)
-            }
-
-            usbConnection.close()
-        }
+        val selectedInterface = adbInterface
 
         connection = null
         adbInterface = null
         bulkInEndpoint = null
         bulkOutEndpoint = null
+
+        if (usbConnection != null) {
+            if (interfaceClaimed && selectedInterface != null) {
+                try {
+                    usbConnection.releaseInterface(selectedInterface)
+                } catch (_: Exception) {
+                    // Continue closing the USB connection.
+                }
+            }
+
+            try {
+                usbConnection.close()
+            } catch (_: Exception) {
+                // Resources are being released.
+            }
+        }
+
         interfaceClaimed = false
-        closed = true
     }
 }
