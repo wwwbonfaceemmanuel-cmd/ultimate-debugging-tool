@@ -4,8 +4,18 @@ package com.ultimate.debugging.ultimate_debugging_tool
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 
+/**
+ * A distinct exception allows MainActivity to distinguish
+ * an intentional cancellation from a genuine connection failure.
+ */
+class AdbConnectionCancelledException(
+    message: String = "ADB connection was cancelled.",
+    cause: Throwable? = null
+) : IOException(message, cause)
+
 class AdbConnection(
-    private val transport: AdbUsbTransport
+    private val transport: AdbUsbTransport,
+    private val onStateChanged: ((State) -> Unit)? = null
 ) {
 
     companion object {
@@ -14,7 +24,7 @@ class AdbConnection(
 
         private const val HOST_BANNER =
             "host::features=shell_v2,cmd,stat_v2,ls_v2,fixed_push_mkdir," +
-            "apex,abb,abb_exec,remount_shell,track_app,sendrecv_v2\u0000"
+                "apex,abb,abb_exec,remount_shell,track_app,sendrecv_v2\u0000"
     }
 
     enum class State {
@@ -69,6 +79,18 @@ class AdbConnection(
     private var cancelled = false
 
     private val connectionLock = Any()
+
+    /**
+     * Safely notifies the owner whenever the connection state changes.
+     * Listener errors must never interrupt ADB communication.
+     */
+    private fun notifyStateChanged(newState: State) {
+        try {
+            onStateChanged?.invoke(newState)
+        } catch (_: Exception) {
+            // A UI/event listener must not break the ADB connection.
+        }
+    }
 
     /**
      * Starts a basic ADB connection negotiation.
@@ -152,8 +174,6 @@ class AdbConnection(
 
                         challengeCount++
 
-                        updateState(State.AUTHENTICATION_REQUIRED)
-
                         if (!signatureSent) {
 
                             val signaturePacket =
@@ -166,8 +186,6 @@ class AdbConnection(
                             checkNotCancelled()
 
                             signatureSent = true
-
-                            updateState(State.CONNECTING)
 
                         } else if (!publicKeySent) {
 
@@ -182,6 +200,15 @@ class AdbConnection(
 
                             publicKeySent = true
 
+                            /*
+                             * IMPORTANT:
+                             * The public key has now been sent.
+                             * Android can display its USB debugging
+                             * authorization prompt at this point.
+                             *
+                             * Notify MainActivity immediately so it
+                             * can update the Flutter interface.
+                             */
                             updateState(
                                 State.AUTHENTICATION_REQUIRED
                             )
@@ -401,6 +428,8 @@ class AdbConnection(
 
             state = State.CONNECTING
         }
+
+        notifyStateChanged(State.CONNECTING)
     }
 
     /**
@@ -412,13 +441,13 @@ class AdbConnection(
         synchronized(connectionLock) {
 
             if (cancelled || state == State.CLOSED) {
-                throw IOException(
-                    "ADB connection was cancelled."
-                )
+                throw AdbConnectionCancelledException()
             }
 
             state = newState
         }
+
+        notifyStateChanged(newState)
     }
 
     /**
@@ -427,16 +456,16 @@ class AdbConnection(
     private fun checkNotCancelled() {
 
         if (cancelled || state == State.CLOSED) {
-            throw IOException(
-                "ADB connection was cancelled."
-            )
+            throw AdbConnectionCancelledException()
         }
     }
 
     /**
      * Returns a rejected handshake result.
      */
-    private fun reject(reason: String): HandshakeResult.Rejected {
+    private fun reject(
+        reason: String
+    ): HandshakeResult.Rejected {
 
         updateState(State.FAILED)
 
@@ -445,25 +474,36 @@ class AdbConnection(
 
     /**
      * Handles errors without overwriting the CLOSED state.
+     *
+     * Intentional cancellation is reported separately from
+     * genuine connection failures.
      */
     private fun handleConnectionError(
         message: String,
         error: Exception
     ): Nothing {
 
+        var cancelledConnection = false
+
         synchronized(connectionLock) {
 
             if (cancelled || state == State.CLOSED) {
+                cancelled = true
                 state = State.CLOSED
-
-                throw IOException(
-                    "ADB connection was cancelled.",
-                    error
-                )
+                cancelledConnection = true
+            } else {
+                state = State.FAILED
             }
-
-            state = State.FAILED
         }
+
+        if (cancelledConnection) {
+            throw AdbConnectionCancelledException(
+                "ADB connection was cancelled.",
+                error
+            )
+        }
+
+        notifyStateChanged(State.FAILED)
 
         if (error is IOException) {
             throw error
@@ -480,6 +520,13 @@ class AdbConnection(
     }
 
     /**
+     * Indicates whether the connection was cancelled.
+     */
+    fun isCancelled(): Boolean {
+        return cancelled || state == State.CLOSED
+    }
+
+    /**
      * Cancels the connection and releases USB resources.
      *
      * This method deliberately does not wait for the
@@ -487,9 +534,19 @@ class AdbConnection(
      */
     fun close() {
 
-        synchronized(connectionLock) {
-            cancelled = true
-            state = State.CLOSED
+        val shouldNotify = synchronized(connectionLock) {
+
+            if (state == State.CLOSED && cancelled) {
+                false
+            } else {
+                cancelled = true
+                state = State.CLOSED
+                true
+            }
+        }
+
+        if (shouldNotify) {
+            notifyStateChanged(State.CLOSED)
         }
 
         try {
