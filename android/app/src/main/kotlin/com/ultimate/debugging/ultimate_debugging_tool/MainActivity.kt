@@ -11,11 +11,15 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import java.io.IOException
+import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
 
@@ -38,6 +42,19 @@ class MainActivity : FlutterActivity() {
 
     private lateinit var usbManager: UsbManager
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val adbExecutor = Executors.newSingleThreadExecutor()
+
+    @Volatile
+    private var adbConnection: AdbConnection? = null
+
+    @Volatile
+    private var adbTransport: AdbUsbTransport? = null
+
+    @Volatile
+    private var adbStatus = "DISCONNECTED"
+
     private var eventSink: EventChannel.EventSink? = null
     private var receiverRegistered = false
 
@@ -52,10 +69,32 @@ class MainActivity : FlutterActivity() {
                 }
 
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                    val detachedDevice =
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            intent.getParcelableExtra(
+                                UsbManager.EXTRA_DEVICE,
+                                UsbDevice::class.java
+                            )
+                        } else {
+                            @Suppress("DEPRECATION")
+                            intent.getParcelableExtra(
+                                UsbManager.EXTRA_DEVICE
+                            )
+                        }
+
+                    if (
+                        detachedDevice != null &&
+                        adbTransport != null &&
+                        adbStatus != "DISCONNECTED"
+                    ) {
+                        disconnectAdbInternal()
+                    }
+
                     sendUsbEvent("disconnected")
                 }
 
                 ACTION_USB_PERMISSION -> {
+
                     val granted = intent.getBooleanExtra(
                         UsbManager.EXTRA_PERMISSION_GRANTED,
                         false
@@ -155,6 +194,30 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
+                "connectAdb" -> {
+                    connectAdb(call, result)
+                }
+
+                "getAdbConnectionStatus" -> {
+                    result.success(
+                        mapOf(
+                            "status" to getCurrentAdbStatus(),
+                            "connected" to (
+                                adbConnection?.isConnected() == true
+                            )
+                        )
+                    )
+                }
+
+                "disconnectAdb" -> {
+                    disconnectAdbInternal()
+                    result.success(true)
+                }
+
+                "getAdbKeyFingerprint" -> {
+                    getAdbKeyFingerprint(result)
+                }
+
                 "isUsbHostSupported" -> {
                     result.success(
                         packageManager.hasSystemFeature(
@@ -187,6 +250,293 @@ class MainActivity : FlutterActivity() {
                 }
             }
         )
+    }
+
+    /**
+     * Starts an ADB connection in a background thread.
+     */
+    private fun connectAdb(
+        call: io.flutter.plugin.common.MethodCall,
+        result: MethodChannel.Result
+    ) {
+
+        val deviceName =
+            call.argument<String>("deviceName")
+
+        val interfaceId =
+            call.argument<Number>("interfaceId")?.toInt()
+
+        if (deviceName.isNullOrBlank() || interfaceId == null) {
+            result.error(
+                "INVALID_ARGUMENTS",
+                "Device name and interface ID are required.",
+                null
+            )
+            return
+        }
+
+        if (
+            adbStatus == "CONNECTING" ||
+            adbStatus == "AUTHENTICATION_REQUIRED" ||
+            adbStatus == "CONNECTED"
+        ) {
+            result.error(
+                "ADB_BUSY",
+                "An ADB connection is already active.",
+                null
+            )
+            return
+        }
+
+        val device = usbManager.deviceList[deviceName]
+
+        if (device == null) {
+            result.error(
+                "DEVICE_NOT_FOUND",
+                "The selected USB device is no longer connected.",
+                null
+            )
+            return
+        }
+
+        if (!usbManager.hasPermission(device)) {
+            result.error(
+                "USB_PERMISSION_REQUIRED",
+                "Grant USB permission before connecting to ADB.",
+                null
+            )
+            return
+        }
+
+        val adbInterfaceExists = (0 until device.interfaceCount)
+            .map { device.getInterface(it) }
+            .any {
+                it.id == interfaceId &&
+                    it.interfaceClass == ADB_CLASS &&
+                    it.interfaceSubclass == ADB_SUBCLASS &&
+                    it.interfaceProtocol == ADB_PROTOCOL
+            }
+
+        if (!adbInterfaceExists) {
+            result.error(
+                "ADB_INTERFACE_NOT_FOUND",
+                "The selected ADB interface was not found.",
+                null
+            )
+            return
+        }
+
+        adbStatus = "CONNECTING"
+
+        sendAdbEvent("connecting")
+
+        adbExecutor.execute {
+
+            var transport: AdbUsbTransport? = null
+            var connection: AdbConnection? = null
+
+            try {
+
+                transport = AdbUsbTransport(
+                    usbManager,
+                    device,
+                    interfaceId
+                )
+
+                connection = AdbConnection(transport)
+
+                adbTransport = transport
+                adbConnection = connection
+
+                transport.open()
+
+                val authentication = AdbAuthentication()
+
+                val handshake = connection.connect(authentication)
+
+                if (adbConnection !== connection) {
+                    throw IOException(
+                        "ADB connection was replaced or cancelled."
+                    )
+                }
+
+                when (handshake) {
+
+                    is AdbConnection.HandshakeResult.Connected -> {
+
+                        adbStatus = "CONNECTED"
+
+                        mainHandler.post {
+                            sendAdbEvent("connected")
+
+                            result.success(
+                                mapOf(
+                                    "status" to "CONNECTED",
+                                    "version" to handshake.version,
+                                    "maxDataSize" to handshake.maxDataSize,
+                                    "deviceBanner" to handshake.deviceBanner,
+                                    "features" to handshake.features,
+                                    "keyFingerprint" to
+                                        authentication.getPublicKeyFingerprint()
+                                )
+                            )
+                        }
+                    }
+
+                    is AdbConnection.HandshakeResult.AuthenticationRequired -> {
+
+                        adbStatus = "AUTHENTICATION_REQUIRED"
+
+                        mainHandler.post {
+                            sendAdbEvent("authentication_required")
+
+                            result.success(
+                                mapOf(
+                                    "status" to "AUTHENTICATION_REQUIRED",
+                                    "message" to
+                                        "The device requires ADB authentication."
+                                )
+                            )
+                        }
+                    }
+
+                    is AdbConnection.HandshakeResult.Rejected -> {
+
+                        adbStatus = "FAILED"
+
+                        connection.close()
+
+                        mainHandler.post {
+                            sendAdbEvent("failed")
+
+                            result.error(
+                                "ADB_REJECTED",
+                                handshake.reason,
+                                null
+                            )
+                        }
+                    }
+                }
+
+            } catch (e: Exception) {
+
+                Log.e(TAG, "ADB connection failed", e)
+
+                connection?.close()
+
+                if (adbConnection === connection) {
+                    adbConnection = null
+                    adbTransport = null
+
+                    if (adbStatus != "DISCONNECTED") {
+                        adbStatus = "FAILED"
+                    }
+                }
+
+                mainHandler.post {
+
+                    sendAdbEvent("failed")
+
+                    result.error(
+                        "ADB_CONNECTION_ERROR",
+                        e.message ?: "ADB connection failed.",
+                        null
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Retrieves the host ADB key fingerprint.
+     */
+    private fun getAdbKeyFingerprint(
+        result: MethodChannel.Result
+    ) {
+
+        adbExecutor.execute {
+
+            try {
+                val authentication = AdbAuthentication()
+
+                authentication.initialize()
+
+                val fingerprint =
+                    authentication.getPublicKeyFingerprint()
+
+                mainHandler.post {
+                    result.success(fingerprint)
+                }
+
+            } catch (e: Exception) {
+
+                Log.e(TAG, "Unable to retrieve ADB fingerprint", e)
+
+                mainHandler.post {
+                    result.error(
+                        "ADB_KEY_ERROR",
+                        e.message ?: "Unable to retrieve ADB fingerprint.",
+                        null
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Returns the latest ADB connection status.
+     */
+    private fun getCurrentAdbStatus(): String {
+
+        val connection = adbConnection
+
+        if (connection != null) {
+            return connection.state.name
+        }
+
+        return adbStatus
+    }
+
+    /**
+     * Disconnects ADB and releases USB resources.
+     *
+     * This deliberately does not wait for the ADB worker thread.
+     */
+    private fun disconnectAdbInternal() {
+
+        val connection = adbConnection
+
+        adbConnection = null
+        adbTransport = null
+        adbStatus = "DISCONNECTED"
+
+        try {
+            connection?.close()
+        } catch (e: Exception) {
+            Log.e(TAG, "ADB disconnect error", e)
+        }
+
+        sendAdbEvent("disconnected")
+    }
+
+    /**
+     * Sends an ADB status event to Flutter.
+     */
+    private fun sendAdbEvent(event: String) {
+
+        mainHandler.post {
+
+            try {
+                eventSink?.success(
+                    mapOf(
+                        "event" to event,
+                        "status" to getCurrentAdbStatus()
+                    )
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Unable to send ADB event", e)
+            }
+        }
     }
 
     override fun onStart() {
@@ -223,6 +573,15 @@ class MainActivity : FlutterActivity() {
         }
 
         super.onStop()
+    }
+
+    override fun onDestroy() {
+
+        disconnectAdbInternal()
+
+        adbExecutor.shutdownNow()
+
+        super.onDestroy()
     }
 
     private fun sendUsbEvent(event: String) {
@@ -287,7 +646,8 @@ class MainActivity : FlutterActivity() {
 
                 for (endpointIndex in 0 until usbInterface.endpointCount) {
 
-                    val endpoint = usbInterface.getEndpoint(endpointIndex)
+                    val endpoint =
+                        usbInterface.getEndpoint(endpointIndex)
 
                     endpoints.add(
                         mapOf(
@@ -337,7 +697,9 @@ class MainActivity : FlutterActivity() {
         return results
     }
 
-    private fun getEndpointDirection(endpoint: UsbEndpoint): String {
+    private fun getEndpointDirection(
+        endpoint: UsbEndpoint
+    ): String {
 
         return when (endpoint.direction) {
             UsbConstants.USB_DIR_IN -> "IN"
@@ -346,7 +708,9 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun getEndpointType(endpoint: UsbEndpoint): String {
+    private fun getEndpointType(
+        endpoint: UsbEndpoint
+    ): String {
 
         return when (endpoint.type) {
             UsbConstants.USB_ENDPOINT_XFER_BULK -> "BULK"
