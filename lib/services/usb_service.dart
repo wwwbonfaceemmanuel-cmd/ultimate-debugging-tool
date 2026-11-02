@@ -160,12 +160,66 @@ class AdbInterfaceInfo {
   }
 }
 
+/// Information returned after a successful ADB handshake.
+class AdbConnectionInfo {
+  final String status;
+  final int version;
+  final int maxDataSize;
+  final String deviceBanner;
+  final List<String> features;
+  final String keyFingerprint;
+
+  const AdbConnectionInfo({
+    required this.status,
+    required this.version,
+    required this.maxDataSize,
+    required this.deviceBanner,
+    required this.features,
+    required this.keyFingerprint,
+  });
+
+  factory AdbConnectionInfo.fromMap(Map<dynamic, dynamic> map) {
+    final rawFeatures = map['features'] as List<dynamic>? ?? [];
+
+    return AdbConnectionInfo(
+      status: map['status']?.toString() ?? 'UNKNOWN',
+      version: map['version'] as int? ?? 0,
+      maxDataSize: map['maxDataSize'] as int? ?? 0,
+      deviceBanner: map['deviceBanner']?.toString() ?? '',
+      features: rawFeatures.map((item) => item.toString()).toList(),
+      keyFingerprint: map['keyFingerprint']?.toString() ?? '',
+    );
+  }
+}
+
+/// Current native ADB connection status.
+class AdbConnectionStatus {
+  final String status;
+  final bool connected;
+
+  const AdbConnectionStatus({
+    required this.status,
+    required this.connected,
+  });
+
+  factory AdbConnectionStatus.fromMap(Map<dynamic, dynamic> map) {
+    return AdbConnectionStatus(
+      status: map['status']?.toString() ?? 'UNKNOWN',
+      connected: map['connected'] as bool? ?? false,
+    );
+  }
+}
+
 class UsbService {
   static const MethodChannel _channel =
       MethodChannel('com.ultimate.debugging/usb');
 
   static const EventChannel _eventChannel =
       EventChannel('com.ultimate.debugging/usb_events');
+
+  // --------------------------------------------------
+  // USB HOST SUPPORT
+  // --------------------------------------------------
 
   Future<bool> isUsbHostSupported() async {
     try {
@@ -179,6 +233,10 @@ class UsbService {
       return false;
     }
   }
+
+  // --------------------------------------------------
+  // USB DEVICES
+  // --------------------------------------------------
 
   Future<List<UsbDeviceInfo>> getConnectedDevices() async {
     try {
@@ -237,6 +295,73 @@ class UsbService {
       return false;
     }
   }
+
+  // --------------------------------------------------
+  // ADB CONNECTION
+  // --------------------------------------------------
+
+  /// Starts an ADB connection to the selected USB device.
+  ///
+  /// The Android side performs the ADB handshake and
+  /// authentication process.
+  Future<AdbConnectionInfo> connectAdb({
+    required String deviceName,
+    required int interfaceId,
+  }) async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'connectAdb',
+      {
+        'deviceName': deviceName,
+        'interfaceId': interfaceId,
+      },
+    );
+
+    if (result == null) {
+      throw PlatformException(
+        code: 'ADB_EMPTY_RESPONSE',
+        message: 'The Android ADB service returned no response.',
+      );
+    }
+
+    return AdbConnectionInfo.fromMap(result);
+  }
+
+  /// Reads the current ADB connection status.
+  Future<AdbConnectionStatus> getAdbConnectionStatus() async {
+    final result = await _channel.invokeMethod<Map<dynamic, dynamic>>(
+      'getAdbConnectionStatus',
+    );
+
+    if (result == null) {
+      return const AdbConnectionStatus(
+        status: 'UNKNOWN',
+        connected: false,
+      );
+    }
+
+    return AdbConnectionStatus.fromMap(result);
+  }
+
+  /// Disconnects the current ADB session.
+  Future<bool> disconnectAdb() async {
+    return await _channel.invokeMethod<bool>(
+          'disconnectAdb',
+        ) ??
+        false;
+  }
+
+  /// Gets the fingerprint of this workstation's ADB public key.
+  Future<String> getAdbKeyFingerprint() async {
+    final fingerprint = await _channel.invokeMethod<String>(
+      'getAdbKeyFingerprint',
+    );
+
+    return fingerprint ?? '';
+  }
+
+  // --------------------------------------------------
+  // USB EVENTS
+  // --------------------------------------------------
 
   Stream<UsbEvent> get usbEvents {
     return _eventChannel
