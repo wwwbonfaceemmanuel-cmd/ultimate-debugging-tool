@@ -44,12 +44,15 @@ class UsbDeviceInfo {
   }
 }
 
+
 class UsbEvent {
   final String event;
+  final String? status;
   final List<UsbDeviceInfo> devices;
 
   const UsbEvent({
     required this.event,
+    this.status,
     required this.devices,
   });
 
@@ -58,6 +61,7 @@ class UsbEvent {
 
     return UsbEvent(
       event: map['event']?.toString() ?? 'unknown',
+      status: map['status']?.toString(),
       devices: rawDevices
           .map(
             (device) => UsbDeviceInfo.fromMap(
@@ -68,6 +72,7 @@ class UsbEvent {
     );
   }
 }
+
 
 class AdbEndpointInfo {
   final int address;
