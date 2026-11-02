@@ -27,7 +27,6 @@ class AdbWirelessManager(
     )
 
     private val executor = Executors.newSingleThreadExecutor()
-
     private val cancelled = AtomicBoolean(false)
 
     @Volatile
@@ -93,6 +92,22 @@ class AdbWirelessManager(
             return
         }
 
+        // Do not replace an existing live connection.
+        if (
+            connectionInfo?.state == AdbConnection.State.CONNECTED ||
+            connectionInfo?.state == AdbConnection.State.AUTHENTICATION_REQUIRED
+        ) {
+            callback(
+                ConnectionInfo(
+                    host,
+                    port,
+                    AdbConnection.State.FAILED,
+                    error = "Disconnect the existing wireless session first."
+                )
+            )
+            return
+        }
+
         cancelled.set(false)
 
         connectionTask = executor.submit {
@@ -107,15 +122,17 @@ class AdbWirelessManager(
     ) {
         var activeTransport: AdbTcpTransport? = null
         var activeConnection: AdbConnection? = null
+        var retainConnection = false
 
         try {
-            val initialInfo = ConnectionInfo(
-                host,
-                port,
-                AdbConnection.State.CONNECTING
+            publish(
+                ConnectionInfo(
+                    host,
+                    port,
+                    AdbConnection.State.CONNECTING
+                ),
+                callback
             )
-
-            publish(initialInfo, callback)
 
             activeTransport = AdbTcpTransport(
                 host = host,
@@ -141,9 +158,9 @@ class AdbWirelessManager(
                 onStateChanged = { state ->
                     publish(
                         ConnectionInfo(
-                            host,
-                            port,
-                            state
+                            host = host,
+                            port = port,
+                            state = state
                         ),
                         callback
                     )
@@ -160,8 +177,15 @@ class AdbWirelessManager(
 
             val result = activeConnection.connect(authentication)
 
+            if (cancelled.get() || closed) {
+                throw IOException("Wireless connection cancelled.")
+            }
+
             val finalInfo = when (result) {
+
                 is AdbConnection.HandshakeResult.Connected -> {
+                    retainConnection = true
+
                     ConnectionInfo(
                         host = host,
                         port = port,
@@ -172,19 +196,21 @@ class AdbWirelessManager(
                 }
 
                 is AdbConnection.HandshakeResult.AuthenticationRequired -> {
+                    retainConnection = true
+
                     ConnectionInfo(
-                        host,
-                        port,
-                        AdbConnection.State.AUTHENTICATION_REQUIRED,
+                        host = host,
+                        port = port,
+                        state = AdbConnection.State.AUTHENTICATION_REQUIRED,
                         error = "Device authorization is required."
                     )
                 }
 
                 is AdbConnection.HandshakeResult.Rejected -> {
                     ConnectionInfo(
-                        host,
-                        port,
-                        AdbConnection.State.FAILED,
+                        host = host,
+                        port = port,
+                        state = AdbConnection.State.FAILED,
                         error = result.reason
                     )
                 }
@@ -193,6 +219,9 @@ class AdbWirelessManager(
             publish(finalInfo, callback)
 
         } catch (error: Exception) {
+
+            retainConnection = false
+
             val failedInfo = ConnectionInfo(
                 host = host,
                 port = port,
@@ -207,23 +236,19 @@ class AdbWirelessManager(
             publish(failedInfo, callback)
 
         } finally {
-            synchronized(this) {
-                if (connection === activeConnection) {
-                    connection = null
+
+            if (!retainConnection) {
+
+                synchronized(this) {
+                    if (connection === activeConnection) {
+                        connection = null
+                    }
+
+                    if (transport === activeTransport) {
+                        transport = null
+                    }
                 }
 
-                if (transport === activeTransport) {
-                    transport = null
-                }
-            }
-
-            val currentInfo = connectionInfo
-
-            if (
-                currentInfo?.host == host &&
-                currentInfo.port == port &&
-                currentInfo.state != AdbConnection.State.CONNECTED
-            ) {
                 try {
                     activeConnection?.close()
                 } catch (_: Exception) {
@@ -262,6 +287,7 @@ class AdbWirelessManager(
 
         connection = null
         transport = null
+        connectionInfo = null
 
         try {
             activeConnection?.close()
@@ -269,7 +295,9 @@ class AdbWirelessManager(
             activeTransport?.close()
         }
 
-        connectionInfo = null
+        if (activeConnection == null) {
+            activeTransport?.close()
+        }
     }
 
     /**
