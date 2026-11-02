@@ -14,6 +14,7 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
   final UsbService _usbService = UsbService();
 
   bool _loading = true;
+  StreamSubscription<UsbEvent>? _eventSubscription;
   bool _hostSupported = false;
   bool _connecting = false;
   bool _disconnecting = false;
@@ -23,19 +24,75 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
   String _keyFingerprint = '';
 
   AdbConnectionInfo? _connectionInfo;
-
   List<AdbInterfaceInfo> _interfaces = [];
 
   bool get _isConnected =>
       _connectionStatus.toUpperCase() == 'CONNECTED';
 
+  bool _isConnectingStatus(String status) {
+    final normalized = status.toUpperCase();
+
+    return normalized == 'CONNECTING' ||
+        normalized == 'AUTHENTICATION_REQUIRED';
+  }
+
+  // --------------------------------------------------
+  // ADB REAL-TIME EVENTS
+  // --------------------------------------------------
+
+  void _listenToAdbEvents() {
+    _eventSubscription = _usbService.usbEvents.listen(
+      (event) {
+        if (!mounted) return;
+
+        final status =
+            (event.status ?? event.event).toUpperCase();
+
+        const knownStatuses = {
+          'CONNECTING',
+          'AUTHENTICATION_REQUIRED',
+          'CONNECTED',
+          'DISCONNECTED',
+          'FAILED',
+          'CLOSED',
+        };
+
+        if (!knownStatuses.contains(status)) return;
+
+        setState(() {
+          _connectionStatus = status;
+          _connecting = _isConnectingStatus(status);
+
+          if (status == 'DISCONNECTED' ||
+              status == 'FAILED' ||
+              status == 'CLOSED') {
+            _connectionInfo = null;
+          }
+        });
+      },
+      onError: (Object error) {
+        if (!mounted) return;
+
+        setState(() {
+          _error = 'ADB event listener error: $error';
+        });
+      },
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+
+    _listenToAdbEvents();
     _refreshInterfaces();
     _loadConnectionStatus();
     _loadKeyFingerprint();
   }
+
+  // --------------------------------------------------
+  // USB INTERFACE DETECTION
+  // --------------------------------------------------
 
   Future<void> _refreshInterfaces() async {
     if (mounted) {
@@ -46,8 +103,11 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
     }
 
     try {
-      final supported = await _usbService.isUsbHostSupported();
-      final interfaces = await _usbService.getAdbInterfaces();
+      final supported =
+          await _usbService.isUsbHostSupported();
+
+      final interfaces =
+          await _usbService.getAdbInterfaces();
 
       if (!mounted) return;
 
@@ -66,19 +126,29 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
     }
   }
 
+  // --------------------------------------------------
+  // CONNECTION STATUS
+  // --------------------------------------------------
+
   Future<void> _loadConnectionStatus() async {
     try {
-      final result = await _usbService.getAdbConnectionStatus();
+      final result =
+          await _usbService.getAdbConnectionStatus();
 
       if (!mounted) return;
 
       setState(() {
         _connectionStatus = result.status;
+        _connecting = _isConnectingStatus(result.status);
       });
     } catch (_) {
       // Keep the last displayed status if retrieval fails.
     }
   }
+
+  // --------------------------------------------------
+  // ADB KEY FINGERPRINT
+  // --------------------------------------------------
 
   Future<void> _loadKeyFingerprint() async {
     try {
@@ -95,12 +165,18 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
     }
   }
 
+  // --------------------------------------------------
+  // USB PERMISSION
+  // --------------------------------------------------
+
   Future<void> _requestPermission(
     AdbInterfaceInfo device,
   ) async {
     try {
       final granted =
-          await _usbService.requestPermission(device.deviceName);
+          await _usbService.requestPermission(
+        device.deviceName,
+      );
 
       if (!mounted) return;
 
@@ -120,16 +196,24 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Permission request failed: $e'),
+          content: Text(
+            'Permission request failed: $e',
+          ),
         ),
       );
     }
   }
 
+  // --------------------------------------------------
+  // CONNECT ADB
+  // --------------------------------------------------
+
   Future<void> _connectAdb(
     AdbInterfaceInfo device,
   ) async {
-    if (_connecting || _disconnecting || _isConnected) return;
+    if (_connecting || _disconnecting || _isConnected) {
+      return;
+    }
 
     if (!device.hasPermission) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -170,10 +254,12 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
 
       if (!mounted) return;
 
+      final resultStatus = result.status.toUpperCase();
+
       setState(() {
         _connectionInfo = result;
-        _connectionStatus = result.status;
-        _connecting = false;
+        _connectionStatus = resultStatus;
+        _connecting = _isConnectingStatus(resultStatus);
       });
 
       await _loadConnectionStatus();
@@ -185,7 +271,9 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
           content: Text(
             _isConnected
                 ? 'ADB connection established.'
-                : 'ADB returned status: ${result.status}',
+                : _connecting
+                    ? 'Waiting for device authorization.'
+                    : 'ADB returned status: ${result.status}',
           ),
         ),
       );
@@ -195,16 +283,23 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
       setState(() {
         _connecting = false;
         _connectionStatus = 'FAILED';
+        _connectionInfo = null;
         _error = e.toString();
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('ADB connection failed: $e'),
+          content: Text(
+            'ADB connection failed: $e',
+          ),
         ),
       );
     }
   }
+
+  // --------------------------------------------------
+  // DISCONNECT ADB
+  // --------------------------------------------------
 
   Future<void> _disconnectAdb() async {
     if (_disconnecting) return;
@@ -227,7 +322,9 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('ADB disconnection requested.'),
+          content: Text(
+            'ADB disconnection requested.',
+          ),
         ),
       );
     } catch (e) {
@@ -240,25 +337,38 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Disconnect failed: $e'),
+          content: Text(
+            'Disconnect failed: $e',
+          ),
         ),
       );
     }
   }
 
+  // --------------------------------------------------
+  // CONNECTION COLORS
+  // --------------------------------------------------
+
   Color _connectionColor() {
     switch (_connectionStatus.toUpperCase()) {
       case 'CONNECTED':
         return Colors.greenAccent;
+
       case 'CONNECTING':
       case 'AUTHENTICATION_REQUIRED':
         return Colors.orangeAccent;
+
       case 'FAILED':
         return Colors.redAccent;
+
       default:
         return Colors.white60;
     }
   }
+
+  // --------------------------------------------------
+  // ADB CONNECTION CARD
+  // --------------------------------------------------
 
   Widget _buildConnectionCard() {
     return Card(
@@ -290,11 +400,14 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
             ),
             const SizedBox(height: 18),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment:
+                  MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
                   'Connection Status',
-                  style: TextStyle(color: Colors.white70),
+                  style: TextStyle(
+                    color: Colors.white70,
+                  ),
                 ),
                 Text(
                   _connectionStatus.replaceAll('_', ' '),
@@ -321,7 +434,8 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
-                onPressed: _disconnecting ? null : _disconnectAdb,
+                onPressed:
+                    _disconnecting ? null : _disconnectAdb,
                 icon: const Icon(Icons.cancel),
                 label: const Text('CANCEL CONNECTION'),
               ),
@@ -365,8 +479,9 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed:
-                      _disconnecting ? null : _disconnectAdb,
+                  onPressed: _disconnecting
+                      ? null
+                      : _disconnectAdb,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red.shade700,
                     foregroundColor: Colors.white,
@@ -381,6 +496,10 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
       ),
     );
   }
+
+  // --------------------------------------------------
+  // USB STATUS CARD
+  // --------------------------------------------------
 
   Widget _buildStatusCard() {
     final detected = _interfaces.length;
@@ -444,7 +563,9 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
       children: [
         Text(
           label,
-          style: const TextStyle(color: Colors.white70),
+          style: const TextStyle(
+            color: Colors.white70,
+          ),
         ),
         Text(
           value,
@@ -457,19 +578,31 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
     );
   }
 
-  Widget _buildEndpointStatus(AdbInterfaceInfo device) {
+  // --------------------------------------------------
+  // ADB ENDPOINT STATUS
+  // --------------------------------------------------
+
+  Widget _buildEndpointStatus(
+    AdbInterfaceInfo device,
+  ) {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
         _statusChip('Bulk IN', device.hasBulkIn),
         _statusChip('Bulk OUT', device.hasBulkOut),
-        _statusChip('ADB Endpoints', device.hasAdbEndpoints),
+        _statusChip(
+          'ADB Endpoints',
+          device.hasAdbEndpoints,
+        ),
       ],
     );
   }
 
-  Widget _statusChip(String label, bool available) {
+  Widget _statusChip(
+    String label,
+    bool available,
+  ) {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: 10,
@@ -481,7 +614,9 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
             : Colors.red.withOpacity(0.12),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: available ? Colors.green : Colors.redAccent,
+          color: available
+              ? Colors.green
+              : Colors.redAccent,
         ),
       ),
       child: Text(
@@ -497,7 +632,13 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
     );
   }
 
-  Widget _buildDeviceCard(AdbInterfaceInfo device) {
+  // --------------------------------------------------
+  // DETECTED DEVICE CARD
+  // --------------------------------------------------
+
+  Widget _buildDeviceCard(
+    AdbInterfaceInfo device,
+  ) {
     final canConnect = device.hasPermission &&
         device.hasAdbEndpoints &&
         device.hasBulkIn &&
@@ -524,7 +665,8 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
                     children: [
                       Text(
                         device.productName.isNotEmpty
@@ -559,8 +701,14 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
               height: 28,
               color: Colors.white24,
             ),
-            _infoRow('Device name', device.deviceName),
-            _infoRow('Device ID', device.deviceId.toString()),
+            _infoRow(
+              'Device name',
+              device.deviceName,
+            ),
+            _infoRow(
+              'Device ID',
+              device.deviceId.toString(),
+            ),
             _infoRow(
               'Vendor ID',
               '0x${device.vendorId.toRadixString(16).toUpperCase()}',
@@ -600,7 +748,9 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
               children: [
                 const Text(
                   'USB Permission',
-                  style: TextStyle(color: Colors.white70),
+                  style: TextStyle(
+                    color: Colors.white70,
+                  ),
                 ),
                 const Spacer(),
                 Text(
@@ -625,7 +775,9 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
                       ? null
                       : () => _requestPermission(device),
                   icon: const Icon(Icons.lock_open),
-                  label: const Text('REQUEST USB PERMISSION'),
+                  label: const Text(
+                    'REQUEST USB PERMISSION',
+                  ),
                 ),
               ),
             ],
@@ -661,7 +813,9 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
               ...device.endpoints.map(
                 (endpoint) => Container(
                   width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 6),
+                  margin: const EdgeInsets.only(
+                    bottom: 6,
+                  ),
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: Colors.black26,
@@ -686,6 +840,10 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
       ),
     );
   }
+
+  // --------------------------------------------------
+  // ADB FINGERPRINT CARD
+  // --------------------------------------------------
 
   Widget _buildFingerprintCard() {
     return Card(
@@ -728,7 +886,14 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
     );
   }
 
-  Widget _infoRow(String label, String value) {
+  // --------------------------------------------------
+  // INFORMATION ROW
+  // --------------------------------------------------
+
+  Widget _infoRow(
+    String label,
+    String value,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
       child: Row(
@@ -757,6 +922,10 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
       ),
     );
   }
+
+  // --------------------------------------------------
+  // EMPTY DEVICE STATE
+  // --------------------------------------------------
 
   Widget _buildEmptyState() {
     return Container(
@@ -800,6 +969,10 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
     );
   }
 
+  // --------------------------------------------------
+  // MAIN SCREEN
+  // --------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -809,7 +982,9 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
         foregroundColor: Colors.white,
         title: const Text(
           'ADB Manager',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
         ),
         actions: [
           IconButton(
@@ -847,7 +1022,9 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
                 decoration: BoxDecoration(
                   color: Colors.red.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.redAccent),
+                  border: Border.all(
+                    color: Colors.redAccent,
+                  ),
                 ),
                 child: Text(
                   _error!,
@@ -860,7 +1037,8 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
               const SizedBox(height: 14),
             ],
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment:
+                  MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
                   'Detected ADB Devices',
@@ -887,10 +1065,13 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
               const Center(
                 child: Text(
                   'Scanning USB interfaces...',
-                  style: TextStyle(color: Colors.white70),
+                  style: TextStyle(
+                    color: Colors.white70,
+                  ),
                 ),
               ),
-            ] else if (_error != null && _interfaces.isEmpty) ...[
+            ] else if (_error != null &&
+                _interfaces.isEmpty) ...[
               const SizedBox(height: 18),
               ElevatedButton.icon(
                 onPressed: _refreshInterfaces,
@@ -901,7 +1082,9 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
               const SizedBox(height: 18),
               const Text(
                 'This phone does not report USB Host support.',
-                style: TextStyle(color: Colors.orangeAccent),
+                style: TextStyle(
+                  color: Colors.orangeAccent,
+                ),
               ),
             ] else if (_interfaces.isEmpty) ...[
               _buildEmptyState(),
@@ -914,5 +1097,15 @@ class _AdbManagerScreenState extends State<AdbManagerScreen> {
         ),
       ),
     );
+  }
+
+  // --------------------------------------------------
+  // CLEANUP
+  // --------------------------------------------------
+
+  @override
+  void dispose() {
+    _eventSubscription?.cancel();
+    super.dispose();
   }
 }
