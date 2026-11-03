@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -60,39 +61,37 @@ class AppDetailsScreen extends StatelessWidget {
     );
   }
 
-  
-String _categoryLabel(ApplicationCategory category) {
-  switch (category) {
-    case ApplicationCategory.criticalSystem:
-      return 'CRITICAL SYSTEM';
-    case ApplicationCategory.system:
-      return 'SYSTEM APPLICATION';
-    case ApplicationCategory.rootManagement:
-      return 'ROOT MANAGEMENT';
-    case ApplicationCategory.user:
-      return 'USER APPLICATION';
-    case ApplicationCategory.disabled:
-      return 'DISABLED APPLICATION';
-    case ApplicationCategory.unknown:
-      return 'UNKNOWN';
+  String _categoryLabel(ApplicationCategory category) {
+    switch (category) {
+      case ApplicationCategory.criticalSystem:
+        return 'CRITICAL SYSTEM';
+      case ApplicationCategory.system:
+        return 'SYSTEM APPLICATION';
+      case ApplicationCategory.rootManagement:
+        return 'ROOT MANAGEMENT';
+      case ApplicationCategory.user:
+        return 'USER APPLICATION';
+      case ApplicationCategory.disabled:
+        return 'DISABLED APPLICATION';
+      case ApplicationCategory.unknown:
+        return 'UNKNOWN';
+    }
   }
-}
 
-String _riskLabel(ApplicationRisk risk) {
-  switch (risk) {
-    case ApplicationRisk.low:
-      return 'LOW';
-    case ApplicationRisk.medium:
-      return 'MEDIUM';
-    case ApplicationRisk.high:
-      return 'HIGH';
-    case ApplicationRisk.critical:
-      return 'CRITICAL';
-    case ApplicationRisk.unknown:
-      return 'UNKNOWN';
+  String _riskLabel(ApplicationRisk risk) {
+    switch (risk) {
+      case ApplicationRisk.low:
+        return 'LOW';
+      case ApplicationRisk.medium:
+        return 'MEDIUM';
+      case ApplicationRisk.high:
+        return 'HIGH';
+      case ApplicationRisk.critical:
+        return 'CRITICAL';
+      case ApplicationRisk.unknown:
+        return 'UNKNOWN';
+    }
   }
-}
-
 
   @override
   Widget build(BuildContext context) {
@@ -102,25 +101,21 @@ String _riskLabel(ApplicationRisk risk) {
 
     return Scaffold(
       backgroundColor: const Color(0xFF0B1424),
-
       appBar: AppBar(
         backgroundColor: const Color(0xFF101D32),
         foregroundColor: Colors.white,
         title: const Text('Application Details'),
       ),
-
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-
             Card(
               color: const Color(0xFF172638),
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
-
                     CircleAvatar(
                       radius: 35,
                       backgroundColor:
@@ -133,9 +128,7 @@ String _riskLabel(ApplicationRisk risk) {
                         color: Colors.lightBlueAccent,
                       ),
                     ),
-
                     const SizedBox(height: 14),
-
                     Text(
                       app.appName,
                       textAlign: TextAlign.center,
@@ -145,9 +138,7 @@ String _riskLabel(ApplicationRisk risk) {
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-
                     const SizedBox(height: 8),
-
                     Text(
                       appType,
                       style: TextStyle(
@@ -263,56 +254,54 @@ String _riskLabel(ApplicationRisk risk) {
               icon: Icons.launch,
             ),
 
-            
-const SizedBox(height: 20),
+            const SizedBox(height: 20),
 
-const Text(
-  'TECHNICIAN DIAGNOSTIC ASSESSMENT',
-  style: TextStyle(
-    color: Colors.white,
-    fontWeight: FontWeight.bold,
-    letterSpacing: 1,
-  ),
-),
+            const Text(
+              'TECHNICIAN DIAGNOSTIC ASSESSMENT',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
 
-const SizedBox(height: 12),
+            const SizedBox(height: 12),
 
-_detailItem(
-  'Application Classification',
-  _categoryLabel(app.category),
-  icon: Icons.category,
-),
+            _detailItem(
+              'Application Classification',
+              _categoryLabel(app.category),
+              icon: Icons.category,
+            ),
 
-_detailItem(
-  'Risk Assessment',
-  _riskLabel(app.risk),
-  icon: Icons.warning_amber,
-),
+            _detailItem(
+              'Risk Assessment',
+              _riskLabel(app.risk),
+              icon: Icons.warning_amber,
+            ),
 
-_detailItem(
-  'Classification Reason',
-  app.classificationReason,
-  icon: Icons.info_outline,
-),
+            _detailItem(
+              'Classification Reason',
+              app.classificationReason,
+              icon: Icons.info_outline,
+            ),
 
-_detailItem(
-  'Recommended Technician Action',
-  app.recommendedAction,
-  icon: Icons.build_circle_outlined,
-),
+            _detailItem(
+              'Recommended Technician Action',
+              app.recommendedAction,
+              icon: Icons.build_circle_outlined,
+            ),
 
-const SizedBox(height: 16),
+            const SizedBox(height: 16),
 
-const Text(
-  'Important: This is an automated preliminary assessment, '
-  'not proof that an application is faulty or dangerous. '
-  'Investigate before performing repairs.',
-  style: TextStyle(
-    color: Colors.white54,
-    fontSize: 11,
-  ),
-),
-
+            const Text(
+              'Important: This is an automated preliminary assessment, '
+              'not proof that an application is faulty or dangerous. '
+              'Investigate before performing repairs.',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 11,
+              ),
+            ),
           ],
         ),
       ),
