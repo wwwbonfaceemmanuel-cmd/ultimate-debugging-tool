@@ -60,6 +60,40 @@ class AppDetailsScreen extends StatelessWidget {
     );
   }
 
+  
+String _categoryLabel(ApplicationCategory category) {
+  switch (category) {
+    case ApplicationCategory.criticalSystem:
+      return 'CRITICAL SYSTEM';
+    case ApplicationCategory.system:
+      return 'SYSTEM APPLICATION';
+    case ApplicationCategory.rootManagement:
+      return 'ROOT MANAGEMENT';
+    case ApplicationCategory.user:
+      return 'USER APPLICATION';
+    case ApplicationCategory.disabled:
+      return 'DISABLED APPLICATION';
+    case ApplicationCategory.unknown:
+      return 'UNKNOWN';
+  }
+}
+
+String _riskLabel(ApplicationRisk risk) {
+  switch (risk) {
+    case ApplicationRisk.low:
+      return 'LOW';
+    case ApplicationRisk.medium:
+      return 'MEDIUM';
+    case ApplicationRisk.high:
+      return 'HIGH';
+    case ApplicationRisk.critical:
+      return 'CRITICAL';
+    case ApplicationRisk.unknown:
+      return 'UNKNOWN';
+  }
+}
+
+
   @override
   Widget build(BuildContext context) {
     final appType = app.isSystemApp
@@ -229,16 +263,56 @@ class AppDetailsScreen extends StatelessWidget {
               icon: Icons.launch,
             ),
 
-            const SizedBox(height: 16),
+            
+const SizedBox(height: 20),
 
-            const Text(
-              'Note: These details are obtained from Android package information. '
-              'A missing launch activity does not necessarily mean an application is broken.',
-              style: TextStyle(
-                color: Colors.white54,
-                fontSize: 11,
-              ),
-            ),
+const Text(
+  'TECHNICIAN DIAGNOSTIC ASSESSMENT',
+  style: TextStyle(
+    color: Colors.white,
+    fontWeight: FontWeight.bold,
+    letterSpacing: 1,
+  ),
+),
+
+const SizedBox(height: 12),
+
+_detailItem(
+  'Application Classification',
+  _categoryLabel(app.category),
+  icon: Icons.category,
+),
+
+_detailItem(
+  'Risk Assessment',
+  _riskLabel(app.risk),
+  icon: Icons.warning_amber,
+),
+
+_detailItem(
+  'Classification Reason',
+  app.classificationReason,
+  icon: Icons.info_outline,
+),
+
+_detailItem(
+  'Recommended Technician Action',
+  app.recommendedAction,
+  icon: Icons.build_circle_outlined,
+),
+
+const SizedBox(height: 16),
+
+const Text(
+  'Important: This is an automated preliminary assessment, '
+  'not proof that an application is faulty or dangerous. '
+  'Investigate before performing repairs.',
+  style: TextStyle(
+    color: Colors.white54,
+    fontSize: 11,
+  ),
+),
+
           ],
         ),
       ),
