@@ -76,11 +76,15 @@ class DashboardScreen extends StatelessWidget {
   ),
 ),
       ToolItem(
-        title: 'Diagnostics',
-        description: 'Inspect device information and system status.',
-        icon: Icons.monitor_heart,
-        color: Colors.orange,
-      ),
+  title: 'Diagnostics',
+  description: 'Inspect device information and system status.',
+  icon: Icons.monitor_heart,
+  color: Colors.orange,
+  onTap: () => _openScreen(
+    context,
+    const DiagnosticsScreen(),
+  ),
+),
       ToolItem(
         title: 'APK Manager',
         description: 'Android application management tools.',
