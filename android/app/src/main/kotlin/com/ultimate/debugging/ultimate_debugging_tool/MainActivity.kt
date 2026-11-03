@@ -245,6 +245,21 @@ class MainActivity : FlutterActivity() {
                     )
                 }
 
+               "getInstalledApplications" -> {
+                    try {
+                        val inventory = ApplicationInventory(this)
+                        result.success(inventory.getInstalledApplications())
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Unable to retrieve installed applications", e)
+
+                        result.error(
+                            "APP_INVENTORY_ERROR",
+                            e.message ?: "Unable to retrieve installed applications",
+                            null
+                        )
+                    }
+                }
+
                 "connectWirelessAdb" -> connectWirelessAdb(call, result)
 
             "getWirelessAdbStatus" -> {
