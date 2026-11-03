@@ -62,10 +62,14 @@ jobs:
           cp /tmp/udt-native-backup/MainActivity.kt \
             android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/MainActivity.kt
 
+          cp /tmp/udt-native-backup/ApplicationInventory.kt \
+            android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/ApplicationInventory.kt
+
       - name: Verify native Android files
         run: |
           test -f android/app/src/main/AndroidManifest.xml
           test -f android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/MainActivity.kt
+          test -f android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/ApplicationInventory.kt
 
       - name: Get dependencies
         run: flutter pub get
