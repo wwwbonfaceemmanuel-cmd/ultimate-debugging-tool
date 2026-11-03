@@ -197,20 +197,22 @@ Color _getRiskColor(ApplicationRisk risk) {
   }
 }
 
+
 String _getRiskLabel(ApplicationRisk risk) {
   switch (risk) {
     case ApplicationRisk.low:
-      return 'LOW RISK';
+      return 'LOW ATTENTION';
     case ApplicationRisk.medium:
-      return 'MEDIUM RISK';
+      return 'MEDIUM ATTENTION';
     case ApplicationRisk.high:
-      return 'HIGH RISK';
+      return 'HIGH ATTENTION';
     case ApplicationRisk.critical:
-      return 'CRITICAL';
+      return 'CRITICAL ATTENTION';
     case ApplicationRisk.unknown:
-      return 'UNKNOWN RISK';
+      return 'UNKNOWN';
   }
 }
+
 
 String _getCategoryLabel(ApplicationCategory category) {
   switch (category) {
@@ -228,6 +230,24 @@ String _getCategoryLabel(ApplicationCategory category) {
       return 'UNKNOWN';
   }
 }
+  
+Color _getCategoryColor(ApplicationCategory category) {
+  switch (category) {
+    case ApplicationCategory.criticalSystem:
+      return Colors.redAccent;
+    case ApplicationCategory.system:
+      return Colors.orangeAccent;
+    case ApplicationCategory.rootManagement:
+      return Colors.deepPurpleAccent;
+    case ApplicationCategory.user:
+      return Colors.greenAccent;
+    case ApplicationCategory.disabled:
+      return Colors.amberAccent;
+    case ApplicationCategory.unknown:
+      return Colors.grey;
+  }
+}
+  
 
 
   Widget _buildApplicationCard(InstalledApplication app) {
@@ -292,9 +312,9 @@ String _getCategoryLabel(ApplicationCategory category) {
            runSpacing: 6,
             children: [
              _statusLabel(
-             _getCategoryLabel(app.category),
-             appColor,
-           ),
+            _getCategoryLabel(app.category),
+            _getCategoryColor(app.category),
+          ),
              _statusLabel(
              _getRiskLabel(app.risk),
              _getRiskColor(app.risk),
