@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'screens/usb_manager_screen.dart';
 import 'screens/adb_manager_screen.dart';
 import 'screens/wireless_adb_screen.dart';
+import 'screens/diagnostics_screen.dart';
 
 void main() {
   runApp(const UltimateDebuggingTool());
