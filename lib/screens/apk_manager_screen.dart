@@ -55,22 +55,34 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
     }
   }
 
-  List<InstalledApplication> get _filteredApplications {
-    final query = _searchController.text.trim().toLowerCase();
+  
+List<InstalledApplication> get _filteredApplications {
+  final query = _searchController.text.trim().toLowerCase();
 
-    return _applications.where((app) {
-      final matchesSearch =
-          app.appName.toLowerCase().contains(query) ||
-          app.packageName.toLowerCase().contains(query);
+  return _applications.where((app) {
+    final matchesSearch =
+        app.appName.toLowerCase().contains(query) ||
+        app.packageName.toLowerCase().contains(query);
 
-      final matchesFilter =
-          _selectedFilter == 'ALL' ||
-          (_selectedFilter == 'USER' && !app.isSystemApp) ||
-          (_selectedFilter == 'SYSTEM' && app.isSystemApp);
+    final matchesFilter = switch (_selectedFilter) {
+      'ALL' => true,
+      'USER' => app.category == ApplicationCategory.user,
+      'SYSTEM' => app.category == ApplicationCategory.system,
+      'CRITICAL' =>
+        app.category == ApplicationCategory.criticalSystem,
+      'ROOT' =>
+        app.category == ApplicationCategory.rootManagement,
+      'DISABLED' =>
+        app.category == ApplicationCategory.disabled,
+      'UNKNOWN' =>
+        app.category == ApplicationCategory.unknown,
+      _ => true,
+    };
 
-      return matchesSearch && matchesFilter;
-    }).toList();
-  }
+    return matchesSearch && matchesFilter;
+  }).toList();
+}
+
 
   Widget _buildSummaryCard() {
     final userApps =
@@ -156,18 +168,67 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
   }
 
   Widget _buildFilterButton(String filter) {
-    final selected = _selectedFilter == filter;
+  final selected = _selectedFilter == filter;
 
-    return ChoiceChip(
-      label: Text(filter),
-      selected: selected,
-      onSelected: (_) {
-        setState(() {
-          _selectedFilter = filter;
-        });
-      },
-    );
+  return ChoiceChip(
+    label: Text(filter),
+    selected: selected,
+    onSelected: (_) {
+      setState(() {
+        _selectedFilter = filter;
+      });
+    },
+  );
+}
+
+  
+Color _getRiskColor(ApplicationRisk risk) {
+  switch (risk) {
+    case ApplicationRisk.low:
+      return Colors.greenAccent;
+    case ApplicationRisk.medium:
+      return Colors.orangeAccent;
+    case ApplicationRisk.high:
+      return Colors.deepOrangeAccent;
+    case ApplicationRisk.critical:
+      return Colors.redAccent;
+    case ApplicationRisk.unknown:
+      return Colors.grey;
   }
+}
+
+String _getRiskLabel(ApplicationRisk risk) {
+  switch (risk) {
+    case ApplicationRisk.low:
+      return 'LOW RISK';
+    case ApplicationRisk.medium:
+      return 'MEDIUM RISK';
+    case ApplicationRisk.high:
+      return 'HIGH RISK';
+    case ApplicationRisk.critical:
+      return 'CRITICAL';
+    case ApplicationRisk.unknown:
+      return 'UNKNOWN RISK';
+  }
+}
+
+String _getCategoryLabel(ApplicationCategory category) {
+  switch (category) {
+    case ApplicationCategory.criticalSystem:
+      return 'CRITICAL SYSTEM';
+    case ApplicationCategory.system:
+      return 'SYSTEM';
+    case ApplicationCategory.rootManagement:
+      return 'ROOT MANAGEMENT';
+    case ApplicationCategory.user:
+      return 'USER';
+    case ApplicationCategory.disabled:
+      return 'DISABLED';
+    case ApplicationCategory.unknown:
+      return 'UNKNOWN';
+  }
+}
+
 
   Widget _buildApplicationCard(InstalledApplication app) {
     final appColor = app.isSystemApp
@@ -225,26 +286,33 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
                 ),
               ),
               const SizedBox(height: 6),
-              Wrap(
-                spacing: 6,
-                children: [
-                  _statusLabel(
-                    app.isSystemApp ? 'SYSTEM' : 'USER',
-                    appColor,
-                  ),
-                  _statusLabel(
-                    app.enabled ? 'ENABLED' : 'DISABLED',
-                    app.enabled
-                        ? Colors.greenAccent
-                        : Colors.redAccent,
-                  ),
-                  if (app.hasLaunchIntent)
-                    _statusLabel(
-                      'LAUNCHABLE',
-                      Colors.lightBlueAccent,
-                    ),
+              
+         Wrap(
+          spacing: 6,
+           runSpacing: 6,
+            children: [
+             _statusLabel(
+             _getCategoryLabel(app.category),
+             appColor,
+           ),
+             _statusLabel(
+             _getRiskLabel(app.risk),
+             _getRiskColor(app.risk),
+           ),
+             _statusLabel(
+             app.enabled ? 'ENABLED' : 'DISABLED',
+              app.enabled
+          ? Colors.greenAccent
+          : Colors.redAccent,
+          ),
+          if (app.hasLaunchIntent)
+           _statusLabel(
+             'LAUNCHABLE',
+              Colors.lightBlueAccent,
+                 ),
                 ],
-              ),
+               ),
+
             ],
           ),
         ),
@@ -344,14 +412,21 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
 
                     const SizedBox(height: 12),
 
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        _buildFilterButton('ALL'),
-                        _buildFilterButton('USER'),
-                        _buildFilterButton('SYSTEM'),
-                      ],
-                    ),
+                    
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+         children: [
+        _buildFilterButton('ALL'),
+        _buildFilterButton('USER'),
+        _buildFilterButton('SYSTEM'),
+        _buildFilterButton('CRITICAL'),
+        _buildFilterButton('ROOT'),
+        _buildFilterButton('DISABLED'),
+       _buildFilterButton('UNKNOWN'),
+     ],
+   ),
+
 
                     const SizedBox(height: 12),
 
