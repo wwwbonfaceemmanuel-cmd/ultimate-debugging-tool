@@ -1,3 +1,4 @@
+import 'app_details_screen.dart';
 import 'package:flutter/material.dart';
 
 import '../services/application_inventory_service.dart';
@@ -176,7 +177,14 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
     return Card(
       color: const Color(0xFF172638),
       margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(
+      child: ListTile(onTap: () {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => AppDetailsScreen(app: app),
+    ),
+  );
+},
         contentPadding: const EdgeInsets.all(12),
         leading: CircleAvatar(
           backgroundColor: appColor.withOpacity(0.15),
