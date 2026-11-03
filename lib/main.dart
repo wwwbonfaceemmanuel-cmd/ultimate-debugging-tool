@@ -5,6 +5,7 @@ import 'screens/usb_manager_screen.dart';
 import 'screens/adb_manager_screen.dart';
 import 'screens/wireless_adb_screen.dart';
 import 'screens/diagnostics_screen.dart';
+import 'screens/apk_manager_screen.dart';
 
 void main() {
   runApp(const UltimateDebuggingTool());
@@ -85,11 +86,15 @@ class DashboardScreen extends StatelessWidget {
     const DiagnosticsScreen(),
   ),
 ),
-      ToolItem(
+            ToolItem(
         title: 'APK Manager',
-        description: 'Android application management tools.',
+        description: 'Manage and inspect installed Android applications.',
         icon: Icons.android,
         color: Colors.lightGreen,
+        onTap: () => _openScreen(
+          context,
+          const ApkManagerScreen(),
+        ),
       ),
       ToolItem(
         title: 'Command Terminal',
