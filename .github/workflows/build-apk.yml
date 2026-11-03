@@ -41,6 +41,9 @@ jobs:
           cp android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/MainActivity.kt \
             /tmp/udt-native-backup/MainActivity.kt
 
+          cp android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/ApplicationInventory.kt \
+            /tmp/udt-native-backup/ApplicationInventory.kt
+     
       - name: Generate Flutter project
         run: |
           flutter create \
