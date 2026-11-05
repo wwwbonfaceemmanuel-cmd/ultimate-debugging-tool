@@ -264,4 +264,123 @@ class ApplicationInventoryService {
       );
     }).toList();
   }
+
+  
+  Future<Map<String, dynamic>> exportApplicationApk(
+    String packageName,
+  ) async {
+    if (packageName.trim().isEmpty) {
+      throw ArgumentError('A valid package name is required.');
+    }
+
+    final dynamic response = await _channel.invokeMethod(
+      'exportApplicationApk',
+      {
+        'packageName': packageName,
+      },
+    );
+
+    if (response is! Map) {
+      throw Exception('Invalid APK backup response.');
+    }
+
+    final data = Map<dynamic, dynamic>.from(response);
+
+    if (data['success'] != true ||
+        data['integrityVerified'] != true) {
+      throw Exception('APK backup was not verified.');
+    }
+
+    final directory = data['backupDirectory'];
+
+    if (directory is! String || directory.isEmpty) {
+      throw Exception('APK backup directory is missing.');
+    }
+
+    final rawFiles = data['files'];
+
+    if (rawFiles is! List || rawFiles.isEmpty) {
+      throw Exception('No APK backup files were returned.');
+    }
+
+    final files = <Map<String, dynamic>>[];
+
+    for (final item in rawFiles) {
+      if (item is! Map) {
+        throw Exception('Invalid APK backup metadata.');
+      }
+
+      final file = Map<dynamic, dynamic>.from(item);
+
+      final name = file['fileName'];
+      final hash = file['sha256'];
+      final size = file['sizeBytes'];
+      final verified = file['verified'];
+
+      if (name is! String ||
+          hash is! String ||
+          size is! num ||
+          verified != true) {
+        throw Exception('Incomplete APK verification metadata.');
+      }
+
+      if (!RegExp(r'^(base|split_[0-9]+)\.apk$')
+          .hasMatch(name)) {
+        throw Exception('Invalid APK backup filename.');
+      }
+
+      if (!RegExp(r'^[A-Fa-f0-9]{64}$').hasMatch(hash)) {
+        throw Exception('Invalid APK SHA-256 fingerprint.');
+      }
+
+      if (size <= 0) {
+        throw Exception('Invalid APK file size.');
+      }
+
+      files.add({
+        'fileName': name,
+        'sha256': hash,
+        'sizeBytes': size,
+        'verified': true,
+      });
+    }
+
+    if (data['fileCount'] != files.length ||
+        !files.any((file) => file['fileName'] == 'base.apk')) {
+      throw Exception('APK backup file list is incomplete.');
+    }
+
+    return {
+      'success': true,
+      'packageName': data['packageName'],
+      'backupDirectory': directory,
+      'fileCount': files.length,
+      'files': files,
+      'integrityVerified': true,
+    };
+  }
+
+  Future<Map<String, dynamic>> shareApplicationApkBackup({
+    required String backupDirectory,
+    required List<Map<String, dynamic>> files,
+  }) async {
+    if (backupDirectory.trim().isEmpty || files.isEmpty) {
+      throw ArgumentError('A valid APK backup is required.');
+    }
+
+    final dynamic response = await _channel.invokeMethod(
+      'shareApplicationApkBackup',
+      {
+        'backupDirectory': backupDirectory,
+        'files': files,
+      },
+    );
+
+    if (response is! Map) {
+      throw Exception('Invalid APK sharing response.');
+    }
+
+    return Map<String, dynamic>.from(response);
+  }
+
 }
