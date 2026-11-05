@@ -43,7 +43,10 @@ jobs:
 
           cp android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/ApplicationInventory.kt \
             /tmp/udt-native-backup/ApplicationInventory.kt
-     
+
+          cp android/app/src/main/res/xml/file_paths.xml \
+            /tmp/udt-native-backup/file_paths.xml
+
       - name: Generate Flutter project
         run: |
           flutter create \
@@ -55,6 +58,7 @@ jobs:
       - name: Restore custom Android files
         run: |
           mkdir -p android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool
+          mkdir -p android/app/src/main/res/xml
 
           cp /tmp/udt-native-backup/AndroidManifest.xml \
             android/app/src/main/AndroidManifest.xml
@@ -65,11 +69,15 @@ jobs:
           cp /tmp/udt-native-backup/ApplicationInventory.kt \
             android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/ApplicationInventory.kt
 
+          cp /tmp/udt-native-backup/file_paths.xml \
+            android/app/src/main/res/xml/file_paths.xml
+
       - name: Verify native Android files
         run: |
           test -f android/app/src/main/AndroidManifest.xml
           test -f android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/MainActivity.kt
           test -f android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/ApplicationInventory.kt
+          test -f android/app/src/main/res/xml/file_paths.xml
 
       - name: Get dependencies
         run: flutter pub get
@@ -82,3 +90,4 @@ jobs:
         with:
           name: ultimate-debugging-tool-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          
