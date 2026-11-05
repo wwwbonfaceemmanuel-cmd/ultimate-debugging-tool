@@ -56,13 +56,13 @@ class MainActivity : FlutterActivity() {
     @Volatile
     private var wirelessManager: AdbWirelessManager? = null
 
-    @Volatile 
+    @Volatile
     private var wirelessStatus = "DISCONNECTED"
 
-    @Volatile 
+    @Volatile
     private var wirelessHost: String? = null
 
-    @Volatile 
+    @Volatile
     private var wirelessPort: Int? = null
 
     @Volatile
@@ -245,28 +245,73 @@ class MainActivity : FlutterActivity() {
                     )
                 }
 
-               "getInstalledApplications" -> {
+                "getInstalledApplications" -> {
                     try {
                         val inventory = ApplicationInventory(this)
-                        result.success(inventory.getInstalledApplications())
+                        result.success(
+                            inventory.getInstalledApplications()
+                        )
                     } catch (e: Exception) {
-                        Log.e(TAG, "Unable to retrieve installed applications", e)
+                        Log.e(
+                            TAG,
+                            "Unable to retrieve installed applications",
+                            e
+                        )
 
                         result.error(
                             "APP_INVENTORY_ERROR",
-                            e.message ?: "Unable to retrieve installed applications",
+                            e.message
+                                ?: "Unable to retrieve installed applications",
                             null
                         )
                     }
                 }
 
-                "connectWirelessAdb" -> connectWirelessAdb(call, result)
+                "getApplicationPermissions" -> {
 
-            "getWirelessAdbStatus" -> {
-            result.success(getWirelessAdbStatus())
-          }
+                    val packageName =
+                        call.argument<String>("packageName")
 
-         "disconnectWirelessAdb" -> disconnectWirelessAdb(result)
+                    if (packageName.isNullOrBlank()) {
+                        result.error(
+                            "INVALID_PACKAGE",
+                            "A valid package name is required.",
+                            null
+                        )
+                        return@setMethodCallHandler
+                    }
+
+                    try {
+                        result.success(
+                            getApplicationPermissions(packageName)
+                        )
+                    } catch (e: Exception) {
+                        Log.e(
+                            TAG,
+                            "Unable to retrieve application permissions",
+                            e
+                        )
+
+                        result.error(
+                            "APP_PERMISSION_ERROR",
+                            e.message
+                                ?: "Unable to retrieve application permissions",
+                            null
+                        )
+                    }
+                }
+
+                "connectWirelessAdb" -> {
+                    connectWirelessAdb(call, result)
+                }
+
+                "getWirelessAdbStatus" -> {
+                    result.success(getWirelessAdbStatus())
+                }
+
+                "disconnectWirelessAdb" -> {
+                    disconnectWirelessAdb(result)
+                }
 
                 else -> result.notImplemented()
             }
@@ -553,133 +598,132 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    
-private fun connectWirelessAdb(
-    call: io.flutter.plugin.common.MethodCall,
-    result: MethodChannel.Result
-) {
-    val host = call.argument<String>("host")?.trim()
-    val port = call.argument<Number>("port")?.toInt()
-
-    if (host.isNullOrBlank() || port == null || port !in 1..65535) {
-        result.error(
-            "INVALID_ARGUMENTS",
-            "A valid device IP address and TCP port are required.",
-            null
-        )
-        return
-    }
-
-    if (
-        wirelessStatus == "CONNECTED" ||
-        wirelessStatus == "AUTHENTICATION_REQUIRED" ||
-        wirelessStatus == "CONNECTING"
+    private fun connectWirelessAdb(
+        call: io.flutter.plugin.common.MethodCall,
+        result: MethodChannel.Result
     ) {
-        result.error(
-            "WIRELESS_BUSY",
-            "A wireless ADB session is already active.",
-            null
-        )
-        return
-    }
+        val host = call.argument<String>("host")?.trim()
+        val port = call.argument<Number>("port")?.toInt()
 
-    val manager = wirelessManager ?: AdbWirelessManager(
-        authentication = AdbAuthentication(),
-        onStateChanged = { state ->
-            wirelessStatus = state.name
+        if (host.isNullOrBlank() || port == null || port !in 1..65535) {
+            result.error(
+                "INVALID_ARGUMENTS",
+                "A valid device IP address and TCP port are required.",
+                null
+            )
+            return
         }
-    ).also {
-        wirelessManager = it
-    }
 
-    wirelessHost = host
-    wirelessPort = port
-    wirelessStatus = "CONNECTING"
+        if (
+            wirelessStatus == "CONNECTED" ||
+            wirelessStatus == "AUTHENTICATION_REQUIRED" ||
+            wirelessStatus == "CONNECTING"
+        ) {
+            result.error(
+                "WIRELESS_BUSY",
+                "A wireless ADB session is already active.",
+                null
+            )
+            return
+        }
 
-    val resultSent = java.util.concurrent.atomic.AtomicBoolean(false)
-
-    wirelessExecutor.execute {
-        manager.connect(host, port) { info ->
-
-            wirelessStatus = info.state.name
-
-            val isFinalState = when (info.state) {
-                AdbConnection.State.CONNECTED,
-                AdbConnection.State.AUTHENTICATION_REQUIRED,
-                AdbConnection.State.FAILED,
-                AdbConnection.State.CLOSED,
-                AdbConnection.State.DISCONNECTED -> true
-
-                else -> false
+        val manager = wirelessManager ?: AdbWirelessManager(
+            authentication = AdbAuthentication(),
+            onStateChanged = { state ->
+                wirelessStatus = state.name
             }
+        ).also {
+            wirelessManager = it
+        }
 
-            if (isFinalState && resultSent.compareAndSet(false, true)) {
-                mainHandler.post {
-                    if (info.state == AdbConnection.State.FAILED) {
-                        result.error(
-                            "WIRELESS_CONNECTION_FAILED",
-                            info.error ?: "Wireless ADB connection failed.",
-                            null
-                        )
-                    } else {
-                        result.success(
-                            mapOf(
-                                "status" to info.state.name,
-                                "host" to info.host,
-                                "port" to info.port,
-                                "deviceBanner" to info.deviceBanner,
-                                "features" to info.features,
-                                "error" to info.error
+        wirelessHost = host
+        wirelessPort = port
+        wirelessStatus = "CONNECTING"
+
+        val resultSent =
+            java.util.concurrent.atomic.AtomicBoolean(false)
+
+        wirelessExecutor.execute {
+            manager.connect(host, port) { info ->
+
+                wirelessStatus = info.state.name
+
+                val isFinalState = when (info.state) {
+                    AdbConnection.State.CONNECTED,
+                    AdbConnection.State.AUTHENTICATION_REQUIRED,
+                    AdbConnection.State.FAILED,
+                    AdbConnection.State.CLOSED,
+                    AdbConnection.State.DISCONNECTED -> true
+
+                    else -> false
+                }
+
+                if (isFinalState && resultSent.compareAndSet(false, true)) {
+                    mainHandler.post {
+                        if (info.state == AdbConnection.State.FAILED) {
+                            result.error(
+                                "WIRELESS_CONNECTION_FAILED",
+                                info.error ?: "Wireless ADB connection failed.",
+                                null
                             )
-                        )
+                        } else {
+                            result.success(
+                                mapOf(
+                                    "status" to info.state.name,
+                                    "host" to info.host,
+                                    "port" to info.port,
+                                    "deviceBanner" to info.deviceBanner,
+                                    "features" to info.features,
+                                    "error" to info.error
+                                )
+                            )
+                        }
                     }
                 }
             }
         }
     }
-}
 
-private fun getWirelessAdbStatus(): Map<String, Any?> {
-    val info = wirelessManager?.getConnectionInfo()
+    private fun getWirelessAdbStatus(): Map<String, Any?> {
+        val info = wirelessManager?.getConnectionInfo()
 
-    return mapOf(
-        "status" to wirelessStatus,
-        "host" to wirelessHost,
-        "port" to wirelessPort,
-        "connected" to (wirelessStatus == "CONNECTED"),
-        "deviceBanner" to info?.deviceBanner,
-        "features" to info?.features,
-        "error" to info?.error
-    )
-}
-
-private fun disconnectWirelessAdb(
-    result: MethodChannel.Result
-) {
-    try {
-        wirelessManager?.disconnect()
-
-        wirelessStatus = "DISCONNECTED"
-        wirelessHost = null
-        wirelessPort = null
-
-        result.success(
-            mapOf(
-                "status" to "DISCONNECTED",
-                "connected" to false
-            )
-        )
-    } catch (error: Exception) {
-        Log.e(TAG, "Wireless ADB disconnect failed", error)
-
-        result.error(
-            "WIRELESS_DISCONNECT_ERROR",
-            error.message ?: "Unable to disconnect wireless ADB.",
-            null
+        return mapOf(
+            "status" to wirelessStatus,
+            "host" to wirelessHost,
+            "port" to wirelessPort,
+            "connected" to (wirelessStatus == "CONNECTED"),
+            "deviceBanner" to info?.deviceBanner,
+            "features" to info?.features,
+            "error" to info?.error
         )
     }
-}
 
+    private fun disconnectWirelessAdb(
+        result: MethodChannel.Result
+    ) {
+        try {
+            wirelessManager?.disconnect()
+
+            wirelessStatus = "DISCONNECTED"
+            wirelessHost = null
+            wirelessPort = null
+
+            result.success(
+                mapOf(
+                    "status" to "DISCONNECTED",
+                    "connected" to false
+                )
+            )
+        } catch (error: Exception) {
+            Log.e(TAG, "Wireless ADB disconnect failed", error)
+
+            result.error(
+                "WIRELESS_DISCONNECT_ERROR",
+                error.message ?: "Unable to disconnect wireless ADB.",
+                null
+            )
+        }
+    }
 
     private fun getAdbKeyFingerprint(
         result: MethodChannel.Result
@@ -798,16 +842,15 @@ private fun disconnectWirelessAdb(
 
     override fun onDestroy() {
 
-    disconnectAdbInternal()
+        disconnectAdbInternal()
 
-    wirelessManager?.shutdown()
-    wirelessManager = null
+        wirelessManager?.shutdown()
+        wirelessManager = null
 
-    wirelessExecutor.shutdownNow()
-    adbExecutor.shutdownNow()
+        wirelessExecutor.shutdownNow()
+        adbExecutor.shutdownNow()
 
-    super.onDestroy()
-    
+        super.onDestroy()
     }
 
     private fun sendUsbEvent(event: String) {
@@ -945,6 +988,163 @@ private fun disconnectWirelessAdb(
             UsbConstants.USB_ENDPOINT_XFER_ISOC -> "ISOCHRONOUS"
             else -> "UNKNOWN"
         }
+    }
+
+    private fun getApplicationPermissions(
+        packageName: String
+    ): List<Map<String, String>> {
+
+        val packageInfo =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getPackageInfo(
+                    packageName,
+                    android.content.pm.PackageManager.PackageInfoFlags.of(
+                        android.content.pm.PackageManager.GET_PERMISSIONS.toLong()
+                    )
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getPackageInfo(
+                    packageName,
+                    android.content.pm.PackageManager.GET_PERMISSIONS
+                )
+            }
+
+        val requestedPermissions =
+            packageInfo.requestedPermissions ?: return emptyList()
+
+        val permissionFlags =
+            packageInfo.requestedPermissionsFlags
+
+        return requestedPermissions.mapIndexed { index, permission ->
+
+            val granted =
+                permissionFlags != null &&
+                    index < permissionFlags.size &&
+                    (permissionFlags[index] and
+                        android.content.pm.PackageInfo
+                            .REQUESTED_PERMISSION_GRANTED) != 0
+
+            val special = isSpecialPermission(permission)
+
+            val status = when {
+                special -> "unknown"
+                granted -> "granted"
+                else -> "denied"
+            }
+
+            val sensitivity = getPermissionSensitivity(permission)
+
+            val explanation = when {
+                special ->
+                    "This permission may require special access in Android settings. Its actual access state has not been verified."
+
+                sensitivity == "critical" ->
+                    "This permission may provide access to highly sensitive messages, calls or communication information."
+
+                sensitivity == "sensitive" ->
+                    "This permission may provide access to personal information or sensitive device features."
+
+                else ->
+                    "This permission is declared by the application. Review its purpose and whether it is necessary."
+            }
+
+            val recommendation = when {
+                special ->
+                    "Inspect the relevant Android special-access settings before making a decision."
+
+                status == "denied" ->
+                    "Check whether the application requires this permission to function correctly."
+
+                sensitivity == "critical" ->
+                    "Verify that this permission is necessary and that the application is trusted."
+
+                sensitivity == "sensitive" ->
+                    "Confirm that this access is appropriate for the application's purpose."
+
+                else ->
+                    "No immediate action is indicated. Review if investigating an application problem."
+            }
+
+            mapOf(
+                "permissionName" to permission,
+                "status" to status,
+                "sensitivity" to sensitivity,
+                "explanation" to explanation,
+                "recommendation" to recommendation
+            )
+        }
+    }
+
+    private fun isSpecialPermission(
+        permission: String
+    ): Boolean {
+
+        val specialPermissions = setOf(
+            "android.permission.SYSTEM_ALERT_WINDOW",
+            "android.permission.WRITE_SETTINGS",
+            "android.permission.MANAGE_EXTERNAL_STORAGE",
+            "android.permission.REQUEST_INSTALL_PACKAGES",
+            "android.permission.PACKAGE_USAGE_STATS",
+            "android.permission.SCHEDULE_EXACT_ALARM"
+        )
+
+        return permission in specialPermissions
+    }
+
+    private fun getPermissionSensitivity(
+        permission: String
+    ): String {
+
+        val criticalPermissions = setOf(
+            "android.permission.READ_SMS",
+            "android.permission.RECEIVE_SMS",
+            "android.permission.SEND_SMS",
+            "android.permission.RECEIVE_MMS",
+            "android.permission.READ_CALL_LOG",
+            "android.permission.WRITE_CALL_LOG",
+            "android.permission.PROCESS_OUTGOING_CALLS"
+        )
+
+        if (permission in criticalPermissions) {
+            return "critical"
+        }
+
+        if (isSpecialPermission(permission)) {
+            return "special"
+        }
+
+        val sensitivePermissions = setOf(
+            "android.permission.CAMERA",
+            "android.permission.RECORD_AUDIO",
+            "android.permission.ACCESS_FINE_LOCATION",
+            "android.permission.ACCESS_COARSE_LOCATION",
+            "android.permission.ACCESS_BACKGROUND_LOCATION",
+            "android.permission.READ_CONTACTS",
+            "android.permission.WRITE_CONTACTS",
+            "android.permission.READ_CALENDAR",
+            "android.permission.WRITE_CALENDAR",
+            "android.permission.CALL_PHONE",
+            "android.permission.READ_PHONE_STATE",
+            "android.permission.READ_PHONE_NUMBERS",
+            "android.permission.ANSWER_PHONE_CALLS",
+            "android.permission.READ_EXTERNAL_STORAGE",
+            "android.permission.WRITE_EXTERNAL_STORAGE",
+            "android.permission.BODY_SENSORS",
+            "android.permission.ACTIVITY_RECOGNITION",
+            "android.permission.BLUETOOTH_SCAN",
+            "android.permission.BLUETOOTH_CONNECT",
+            "android.permission.BLUETOOTH_ADVERTISE"
+        )
+
+        if (
+            permission in sensitivePermissions ||
+            permission.startsWith("android.permission.READ_MEDIA_")
+        ) {
+            return "sensitive"
+        }
+
+        return "normal"
     }
 
     private fun requestDevicePermission(device: UsbDevice) {
