@@ -4,6 +4,7 @@ package com.ultimate.debugging.ultimate_debugging_tool
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.ClipData
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
@@ -267,6 +268,31 @@ class MainActivity : FlutterActivity() {
 
                     exportApplicationApk(packageName, result)
                 }
+                
+
+                "shareApplicationApkBackup" -> {
+
+    val backupDirectory =
+        call.argument<String>("backupDirectory")
+
+    val files =
+        call.argument<List<*>>("files")
+
+    if (backupDirectory.isNullOrBlank() || files.isNullOrEmpty()) {
+        result.error(
+            "INVALID_BACKUP",
+            "A backup directory and verified APK file list are required.",
+            null
+        )
+        return@setMethodCallHandler
+    }
+
+    shareApplicationApkBackup(
+        backupDirectory,
+        files,
+        result
+    )
+}
 
                 "getInstalledApplications" -> {
                     try {
@@ -1380,4 +1406,234 @@ class MainActivity : FlutterActivity() {
 
         }, "APK-Backup-Worker").start()
     }
+
+    private fun shareApplicationApkBackup(
+    backupDirectoryPath: String,
+    fileMetadata: List<*>,
+    result: MethodChannel.Result
+) {
+
+    Thread({
+
+        try {
+            // Only allow direct child directories of apk_exports.
+            val backupRoot = File(
+                filesDir,
+                "apk_exports"
+            ).canonicalFile
+
+            val backupDirectory =
+                File(backupDirectoryPath).canonicalFile
+
+            if (
+                backupDirectory.parentFile != backupRoot ||
+                !backupDirectory.isDirectory
+            ) {
+                throw SecurityException(
+                    "The requested backup directory is not permitted."
+                )
+            }
+
+            val validatedFiles = mutableListOf<File>()
+
+            val seenNames = mutableSetOf<String>()
+
+            // Verify every APK before sharing.
+            fileMetadata.forEach { item ->
+
+                val metadata = item as? Map<*, *>
+                    ?: throw IllegalArgumentException(
+                        "Invalid APK backup metadata."
+                    )
+
+                val fileName = metadata["fileName"] as? String
+                    ?: throw IllegalArgumentException(
+                        "APK filename is missing."
+                    )
+
+                val expectedHash = metadata["sha256"] as? String
+                    ?: throw IllegalArgumentException(
+                        "APK SHA-256 fingerprint is missing."
+                    )
+
+                val verified = metadata["verified"] as? Boolean
+                    ?: false
+
+                val expectedSize =
+                    (metadata["sizeBytes"] as? Number)?.toLong()
+                        ?: throw IllegalArgumentException(
+                            "APK file size is missing."
+                        )
+
+                if (!verified) {
+                    throw SecurityException(
+                        "An APK file has not passed backup verification."
+                    )
+                }
+
+                if (
+                    !fileName.matches(
+                        Regex("""(?:base|split_[0-9]+)\.apk""")
+                    )
+                ) {
+                    throw SecurityException(
+                        "An invalid APK filename was supplied."
+                    )
+                }
+
+                if (!seenNames.add(fileName)) {
+                    throw SecurityException(
+                        "Duplicate APK filename detected."
+                    )
+                }
+
+                if (!expectedHash.matches(Regex("[A-Fa-f0-9]{64}"))) {
+                    throw SecurityException(
+                        "Invalid SHA-256 fingerprint."
+                    )
+                }
+
+                val apkFile = File(
+                    backupDirectory,
+                    fileName
+                ).canonicalFile
+
+                if (
+                    apkFile.parentFile != backupDirectory ||
+                    !apkFile.exists() ||
+                    !apkFile.isFile ||
+                    !apkFile.canRead()
+                ) {
+                    throw SecurityException(
+                        "An APK backup file is unavailable."
+                    )
+                }
+
+                if (apkFile.length() != expectedSize) {
+                    throw SecurityException(
+                        "APK size verification failed for $fileName."
+                    )
+                }
+
+                val actualHash = calculateSha256(apkFile)
+
+                if (!actualHash.equals(expectedHash, ignoreCase = true)) {
+                    throw SecurityException(
+                        "APK integrity verification failed for $fileName."
+                    )
+                }
+
+                validatedFiles.add(apkFile)
+            }
+
+            if (
+                validatedFiles.isEmpty() ||
+                "base.apk" !in seenNames
+            ) {
+                throw IllegalStateException(
+                    "The backup must contain a verified base.apk file."
+                )
+            }
+
+            // Create secure FileProvider content URIs.
+            val apkUris = ArrayList<Uri>()
+
+            validatedFiles.forEach { apkFile ->
+
+                val uri = FileProvider.getUriForFile(
+                    this,
+                    "$packageName.fileprovider",
+                    apkFile
+                )
+
+                apkUris.add(uri)
+            }
+
+            // Open Android's sharing interface on the main thread.
+            mainHandler.post {
+
+                try {
+
+                    val shareIntent = Intent(
+                        Intent.ACTION_SEND_MULTIPLE
+                    ).apply {
+
+                        type = "application/vnd.android.package-archive"
+
+                        putParcelableArrayListExtra(
+                            Intent.EXTRA_STREAM,
+                            apkUris
+                        )
+
+                        addFlags(
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        )
+
+                        clipData = ClipData.newUri(
+                            contentResolver,
+                            "Verified APK backup",
+                            apkUris.first()
+                        ).apply {
+
+                            apkUris.drop(1).forEach { uri ->
+                                addItem(
+                                    ClipData.Item(uri)
+                                )
+                            }
+                        }
+                    }
+
+                    startActivity(
+                        Intent.createChooser(
+                            shareIntent,
+                            "Share verified APK backup"
+                        )
+                    )
+
+                    result.success(
+                        mapOf(
+                            "success" to true,
+                            "fileCount" to apkUris.size,
+                            "integrityVerified" to true
+                        )
+                    )
+
+                } catch (e: Exception) {
+
+                    Log.e(
+                        TAG,
+                        "Unable to open APK sharing interface",
+                        e
+                    )
+
+                    result.error(
+                        "APK_SHARE_ERROR",
+                        e.message ?: "Unable to share APK backup.",
+                        null
+                    )
+                }
+            }
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "APK backup sharing verification failed",
+                e
+            )
+
+            mainHandler.post {
+
+                result.error(
+                    "APK_SHARE_VERIFICATION_ERROR",
+                    e.message ?: "APK backup verification failed.",
+                    null
+                )
+            }
+        }
+
+     }, "APK-Share-Worker").start()
+    
+  }
+    
 }
