@@ -58,7 +58,7 @@ jobs:
       - name: Add AndroidX Core dependency
         run: |
           if [ -f android/app/build.gradle.kts ]; then
-            if ! grep -q 'androidx.core:core' android/app/build.gradle.kts; then
+            if ! grep -q 'androidx.core:core:1.15.0' android/app/build.gradle.kts; then
               cat >> android/app/build.gradle.kts <<'EOF'
 
           dependencies {
@@ -68,7 +68,7 @@ jobs:
             fi
 
           elif [ -f android/app/build.gradle ]; then
-            if ! grep -q 'androidx.core:core' android/app/build.gradle; then
+            if ! grep -q 'androidx.core:core:1.15.0' android/app/build.gradle; then
               cat >> android/app/build.gradle <<'EOF'
 
           dependencies {
