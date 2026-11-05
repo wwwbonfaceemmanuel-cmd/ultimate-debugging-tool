@@ -58,7 +58,6 @@ jobs:
       - name: Add AndroidX Core dependency
         run: |
           if [ -f android/app/build.gradle.kts ]; then
-
             if ! grep -q 'androidx.core:core' android/app/build.gradle.kts; then
               cat >> android/app/build.gradle.kts <<'EOF'
 
@@ -69,7 +68,6 @@ jobs:
             fi
 
           elif [ -f android/app/build.gradle ]; then
-
             if ! grep -q 'androidx.core:core' android/app/build.gradle; then
               cat >> android/app/build.gradle <<'EOF'
 
@@ -110,7 +108,15 @@ jobs:
 
           grep -q 'androidx.core.content.FileProvider' android/app/src/main/AndroidManifest.xml
           grep -q 'apk_exports/' android/app/src/main/res/xml/file_paths.xml
-          grep -q 'androidx.core:core:1.15.0' android/app/build.gradle.kts android/app/build.gradle
+
+          if [ -f android/app/build.gradle.kts ]; then
+            grep -q 'androidx.core:core:1.15.0' android/app/build.gradle.kts
+          elif [ -f android/app/build.gradle ]; then
+            grep -q 'androidx.core:core:1.15.0' android/app/build.gradle
+          else
+            echo "ERROR: Android app Gradle file not found."
+            exit 1
+          fi
 
       - name: Get dependencies
         run: flutter pub get
