@@ -105,8 +105,11 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
         _backingUpPackages.remove(app.packageName);
       });
 
-      final files =
-          List<Map<String, dynamic>>.from(backup['files'] as List);
+      final files = (backup['files'] as List)
+    .map(
+      (file) => Map<String, dynamic>.from(file as Map),
+    )
+    .toList();
 
       final backupDirectory =
           backup['backupDirectory'] as String;
