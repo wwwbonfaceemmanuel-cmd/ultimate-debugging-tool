@@ -1291,11 +1291,11 @@ class MainActivity : FlutterActivity() {
                     "apk_exports/$safePackageName-${System.currentTimeMillis()}"
                 )
 
-                if (!directory.mkdirs()) {
-                    throw IllegalStateException(
-                        "Unable to create the APK backup directory."
-                    )
-                }
+                if (!directory.mkdirs() && !directory.isDirectory) {
+              throw IllegalStateException(
+             "Unable to create the APK backup directory."
+        )
+    }
 
                 // Register the directory for cleanup only after creation.
                 backupDirectory = directory
