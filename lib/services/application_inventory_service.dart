@@ -28,6 +28,14 @@ class InstalledApplication {
   final bool isSystemApp;
   final bool hasLaunchIntent;
 
+  // Additional diagnostic information.
+  final int? uid;
+  final int? targetSdkVersion;
+  final int? firstInstallTime;
+  final int? lastUpdateTime;
+  final String? installSource;
+  final bool packageInfoAvailable;
+
   final ApplicationCategory category;
   final ApplicationRisk risk;
   final String classificationReason;
@@ -42,6 +50,12 @@ class InstalledApplication {
     required this.enabled,
     required this.isSystemApp,
     required this.hasLaunchIntent,
+    this.uid,
+    this.targetSdkVersion,
+    this.firstInstallTime,
+    this.lastUpdateTime,
+    this.installSource,
+    this.packageInfoAvailable = false,
     required this.category,
     required this.risk,
     required this.classificationReason,
@@ -83,6 +97,18 @@ class InstalledApplication {
       isSystemApp: isSystemApp,
       hasLaunchIntent:
           map['hasLaunchIntent'] as bool? ?? false,
+
+      uid: (map['uid'] as num?)?.toInt(),
+      targetSdkVersion:
+          (map['targetSdkVersion'] as num?)?.toInt(),
+      firstInstallTime:
+          (map['firstInstallTime'] as num?)?.toInt(),
+      lastUpdateTime:
+          (map['lastUpdateTime'] as num?)?.toInt(),
+      installSource: map['installSource']?.toString(),
+      packageInfoAvailable:
+          map['packageInfoAvailable'] as bool? ?? false,
+
       category: classification.category,
       risk: classification.risk,
       classificationReason: classification.reason,
