@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/application_inventory_service.dart';
+import 'application_permissions_screen.dart';
 
 class AppDetailsScreen extends StatelessWidget {
   final InstalledApplication app;
@@ -20,6 +21,16 @@ class AppDetailsScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Package name copied.'),
+      ),
+    );
+  }
+
+  void _openPermissions(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            ApplicationPermissionsScreen(app: app),
       ),
     );
   }
@@ -91,6 +102,44 @@ class AppDetailsScreen extends StatelessWidget {
       case ApplicationRisk.unknown:
         return 'UNKNOWN';
     }
+  }
+
+  Widget _buildPermissionsButton(BuildContext context) {
+    return Card(
+      color: const Color(0xFF172638),
+      margin: const EdgeInsets.only(bottom: 10),
+      child: ListTile(
+        leading: const Icon(
+          Icons.security,
+          color: Colors.lightBlueAccent,
+          size: 30,
+        ),
+        title: const Text(
+          'Application Permissions Analysis',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        subtitle: const Padding(
+          padding: EdgeInsets.only(top: 5),
+          child: Text(
+            'Inspect requested permissions, grant status, '
+            'sensitivity and technician recommendations.',
+            style: TextStyle(
+              color: Colors.white60,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        trailing: const Icon(
+          Icons.arrow_forward_ios,
+          color: Colors.lightBlueAccent,
+          size: 18,
+        ),
+        onTap: () => _openPermissions(context),
+      ),
+    );
   }
 
   @override
@@ -253,6 +302,21 @@ class AppDetailsScreen extends StatelessWidget {
                   : 'No standard launch activity detected',
               icon: Icons.launch,
             ),
+
+            const SizedBox(height: 20),
+
+            const Text(
+              'APPLICATION SECURITY & PERMISSIONS',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            _buildPermissionsButton(context),
 
             const SizedBox(height: 20),
 
