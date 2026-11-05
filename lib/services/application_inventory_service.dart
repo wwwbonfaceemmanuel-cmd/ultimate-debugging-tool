@@ -28,13 +28,19 @@ class InstalledApplication {
   final bool isSystemApp;
   final bool hasLaunchIntent;
 
-  // Additional diagnostic information.
+  // Application diagnostic information.
   final int? uid;
   final int? targetSdkVersion;
   final int? firstInstallTime;
   final int? lastUpdateTime;
   final String? installSource;
   final bool packageInfoAvailable;
+
+  // APK signing information.
+  final bool signingInfoAvailable;
+  final bool hasMultipleSigners;
+  final int signerCount;
+  final List<String> certificateSha256;
 
   final ApplicationCategory category;
   final ApplicationRisk risk;
@@ -56,6 +62,10 @@ class InstalledApplication {
     this.lastUpdateTime,
     this.installSource,
     this.packageInfoAvailable = false,
+    this.signingInfoAvailable = false,
+    this.hasMultipleSigners = false,
+    this.signerCount = 0,
+    this.certificateSha256 = const [],
     required this.category,
     required this.risk,
     required this.classificationReason,
@@ -86,6 +96,10 @@ class InstalledApplication {
       enabled: enabled,
     );
 
+    final fingerprints = (
+      map['certificateSha256'] as List? ?? []
+    ).map((item) => item.toString()).toList();
+
     return InstalledApplication(
       appName: appName,
       packageName: packageName,
@@ -109,6 +123,15 @@ class InstalledApplication {
       packageInfoAvailable:
           map['packageInfoAvailable'] as bool? ?? false,
 
+      signingInfoAvailable:
+          map['signingInfoAvailable'] as bool? ?? false,
+      hasMultipleSigners:
+          map['hasMultipleSigners'] as bool? ?? false,
+      signerCount:
+          (map['signerCount'] as num?)?.toInt() ??
+              fingerprints.length,
+      certificateSha256: fingerprints,
+
       category: classification.category,
       risk: classification.risk,
       classificationReason: classification.reason,
@@ -123,7 +146,6 @@ class InstalledApplication {
   }) {
     final package = packageName.toLowerCase();
 
-    // Known critical Android components.
     const criticalPackages = {
       'android',
       'com.android.systemui',
@@ -148,7 +170,6 @@ class InstalledApplication {
       );
     }
 
-    // Known root-management applications.
     const rootPackages = {
       'com.topjohnwu.magisk',
       'eu.chainfire.supersu',
