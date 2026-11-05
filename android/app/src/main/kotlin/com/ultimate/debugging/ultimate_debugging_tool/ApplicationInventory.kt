@@ -14,14 +14,15 @@ class ApplicationInventory(private val context: Context) {
 
     fun getInstalledApplications(): List<Map<String, Any?>> {
 
-        val applications = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            packageManager.getInstalledApplications(
-                PackageManager.ApplicationInfoFlags.of(0)
-            )
-        } else {
-            @Suppress("DEPRECATION")
-            packageManager.getInstalledApplications(0)
-        }
+        val applications =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                packageManager.getInstalledApplications(
+                    PackageManager.ApplicationInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getInstalledApplications(0)
+            }
 
         return applications.map { appInfo ->
 
@@ -37,10 +38,14 @@ class ApplicationInventory(private val context: Context) {
                 appInfo.packageName
             }
 
+            val installSource = getInstallSource(appInfo.packageName)
+
             mapOf(
                 "appName" to appName,
                 "packageName" to appInfo.packageName,
+
                 "versionName" to packageInfo?.versionName,
+
                 "versionCode" to packageInfo?.let {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                         it.longVersionCode
@@ -49,18 +54,27 @@ class ApplicationInventory(private val context: Context) {
                         it.versionCode.toLong()
                     }
                 },
+
                 "appType" to if (isSystemApp) "SYSTEM" else "USER",
                 "enabled" to appInfo.enabled,
                 "isSystemApp" to isSystemApp,
+
                 "hasLaunchIntent" to (
                     packageManager.getLaunchIntentForPackage(
                         appInfo.packageName
                     ) != null
-                )
+                ),
+
+                // Additional application diagnostic information.
+                "uid" to appInfo.uid,
+                "targetSdkVersion" to appInfo.targetSdkVersion,
+                "firstInstallTime" to packageInfo?.firstInstallTime,
+                "lastUpdateTime" to packageInfo?.lastUpdateTime,
+                "installSource" to installSource,
+                "packageInfoAvailable" to (packageInfo != null)
             )
         }.sortedBy {
-            (it["appName"] as? String)?.lowercase()
-                ?: ""
+            (it["appName"] as? String)?.lowercase() ?: ""
         }
     }
 
@@ -74,6 +88,21 @@ class ApplicationInventory(private val context: Context) {
             } else {
                 @Suppress("DEPRECATION")
                 packageManager.getPackageInfo(packageName, 0)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun getInstallSource(packageName: String): String? {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                packageManager
+                    .getInstallSourceInfo(packageName)
+                    .installingPackageName
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getInstallerPackageName(packageName)
             }
         } catch (_: Exception) {
             null
