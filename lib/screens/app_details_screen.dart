@@ -13,14 +13,12 @@ class AppDetailsScreen extends StatelessWidget {
     required this.app,
   });
 
-  void _copyPackageName(BuildContext context) {
-    Clipboard.setData(
-      ClipboardData(text: app.packageName),
-    );
+  void _copyText(BuildContext context, String value, String label) {
+    Clipboard.setData(ClipboardData(text: value));
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Package name copied.'),
+      SnackBar(
+        content: Text('$label copied.'),
       ),
     );
   }
@@ -158,6 +156,149 @@ class AppDetailsScreen extends StatelessWidget {
         ),
         onTap: () => _openPermissions(context),
       ),
+    );
+  }
+
+  Widget _buildSigningSection(BuildContext context) {
+    final fingerprints = app.certificateSha256;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'APK SIGNING CERTIFICATE INSPECTION',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1,
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        _detailItem(
+          'Signing Information',
+          app.signingInfoAvailable
+              ? 'AVAILABLE'
+              : 'UNAVAILABLE',
+          icon: Icons.verified_user_outlined,
+        ),
+
+        _detailItem(
+          'Multiple Simultaneous Signers',
+          app.hasMultipleSigners ? 'YES' : 'NO',
+          icon: Icons.security,
+        ),
+
+        _detailItem(
+          'Certificate Fingerprints Found',
+          app.signerCount.toString(),
+          icon: Icons.fingerprint,
+        ),
+
+        if (fingerprints.isNotEmpty) ...[
+          const SizedBox(height: 8),
+
+          const Text(
+            'SHA-256 CERTIFICATE FINGERPRINTS',
+            style: TextStyle(
+              color: Colors.white70,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+
+          const SizedBox(height: 10),
+
+          ...fingerprints.asMap().entries.map((entry) {
+            final index = entry.key;
+            final fingerprint = entry.value;
+
+            return Card(
+              color: const Color(0xFF172638),
+              margin: const EdgeInsets.only(bottom: 10),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Certificate ${index + 1}',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    SelectableText(
+                      fingerprint,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        height: 1.5,
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () {
+                          _copyText(
+                            context,
+                            fingerprint,
+                            'Certificate fingerprint',
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.copy,
+                          size: 16,
+                        ),
+                        label: const Text('Copy fingerprint'),
+                        style: TextButton.styleFrom(
+                          foregroundColor:
+                              Colors.lightBlueAccent,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ] else
+          _detailItem(
+            'Certificate Fingerprints',
+            'No fingerprints were provided by Android.',
+            icon: Icons.info_outline,
+          ),
+
+        Card(
+          color: const Color(0xFF172638),
+          margin: const EdgeInsets.only(bottom: 10),
+          child: const Padding(
+            padding: EdgeInsets.all(14),
+            child: Text(
+              'Technician note: A certificate fingerprint identifies '
+              'a signing certificate. It does not independently prove '
+              'that the publisher is trusted or that the application '
+              'is safe. Compare fingerprints with a trusted reference '
+              'when available. Certificate history may include older '
+              'certificates after signing-key rotation. Unavailable '
+              'signing information is not proof of corruption.',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -352,6 +493,165 @@ class AppDetailsScreen extends StatelessWidget {
               color: const Color(0xFF172638),
               child: ListTile(
                 leading: const Icon(
+                  Icons.inventory_2,
+                  color: Colors.lightBlueAccent,
+                ),
+                title: const Text(
+                  'Package Name',
+                  style: TextStyle(
+                    color: Colors.white60,
+                    fontSize: 12,
+                  ),
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 5),
+                  child: Text(
+                    app.packageName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                trailing: IconButton(
+                  icon: const Icon(
+                    Icons.copy,
+                    color: Colors.lightBlueAccent,
+                  ),
+                  onPressed: () {
+                    _copyText(
+                      context,
+                      app.packageName,
+                      'Package name',
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            _detailItem(
+              'Version Name',
+              app.versionName ?? 'Unknown',
+              icon: Icons.new_releases,
+            ),
+
+            _detailItem(
+              'Version Code',
+              app.versionCode?.toString() ?? 'Unknown',
+              icon: Icons.numbers,
+            ),
+
+            const SizedBox(height: 20),
+
+            const Text(
+              'APPLICATION STATUS',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            _detailItem(
+              'Application Type',
+              appType,
+              icon: Icons.category,
+            ),
+
+            _detailItem(
+              'Enabled Status',
+              app.enabled ? 'ENABLED' : 'DISABLED',
+              icon: Icons.power_settings_new,
+            ),
+
+            _detailItem(
+              'Launch Support',
+              app.hasLaunchIntent
+                  ? 'Launchable application'
+                  : 'No standard launch activity detected',
+              icon: Icons.launch,
+            ),
+
+            const SizedBox(height: 20),
+
+            _buildIntegritySection(),
+
+            const SizedBox(height: 20),
+
+            _buildSigningSection(context),
+
+            const SizedBox(height: 20),
+
+            const Text(
+              'APPLICATION SECURITY & PERMISSIONS',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            _buildPermissionsButton(context),
+
+            const SizedBox(height: 20),
+
+            const Text(
+              'TECHNICIAN DIAGNOSTIC ASSESSMENT',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            _detailItem(
+              'Application Classification',
+              _categoryLabel(app.category),
+              icon: Icons.category,
+            ),
+
+            _detailItem(
+              'Risk Assessment',
+              _riskLabel(app.risk),
+              icon: Icons.warning_amber,
+            ),
+
+            _detailItem(
+              'Classification Reason',
+              app.classificationReason,
+              icon: Icons.info_outline,
+            ),
+
+            _detailItem(
+              'Recommended Technician Action',
+              app.recommendedAction,
+              icon: Icons.build_circle_outlined,
+            ),
+
+            const SizedBox(height: 16),
+
+            const Text(
+              'Important: This is an automated preliminary assessment, '
+              'not proof that an application is faulty or dangerous. '
+              'Investigate before performing repairs.',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+leading: const Icon(
                   Icons.inventory_2,
                   color: Colors.lightBlueAccent,
                 ),
