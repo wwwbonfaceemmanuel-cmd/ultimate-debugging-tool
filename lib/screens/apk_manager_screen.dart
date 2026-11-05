@@ -1,3 +1,4 @@
+
 import 'app_details_screen.dart';
 import 'package:flutter/material.dart';
 
@@ -18,6 +19,8 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
       TextEditingController();
 
   List<InstalledApplication> _applications = [];
+
+  final Set<String> _backingUpPackages = {};
 
   bool _loading = true;
   String? _error;
@@ -55,34 +58,198 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
     }
   }
 
-  
-List<InstalledApplication> get _filteredApplications {
-  final query = _searchController.text.trim().toLowerCase();
+  List<InstalledApplication> get _filteredApplications {
+    final query = _searchController.text.trim().toLowerCase();
 
-  return _applications.where((app) {
-    final matchesSearch =
-        app.appName.toLowerCase().contains(query) ||
-        app.packageName.toLowerCase().contains(query);
+    return _applications.where((app) {
+      final matchesSearch =
+          app.appName.toLowerCase().contains(query) ||
+          app.packageName.toLowerCase().contains(query);
 
-    final matchesFilter = switch (_selectedFilter) {
-      'ALL' => true,
-      'USER' => app.category == ApplicationCategory.user,
-      'SYSTEM' => app.category == ApplicationCategory.system,
-      'CRITICAL' =>
-        app.category == ApplicationCategory.criticalSystem,
-      'ROOT' =>
-        app.category == ApplicationCategory.rootManagement,
-      'DISABLED' =>
-        app.category == ApplicationCategory.disabled,
-      'UNKNOWN' =>
-        app.category == ApplicationCategory.unknown,
-      _ => true,
-    };
+      final matchesFilter = switch (_selectedFilter) {
+        'ALL' => true,
+        'USER' => app.category == ApplicationCategory.user,
+        'SYSTEM' => app.category == ApplicationCategory.system,
+        'CRITICAL' =>
+          app.category == ApplicationCategory.criticalSystem,
+        'ROOT' =>
+          app.category == ApplicationCategory.rootManagement,
+        'DISABLED' =>
+          app.category == ApplicationCategory.disabled,
+        'UNKNOWN' =>
+          app.category == ApplicationCategory.unknown,
+        _ => true,
+      };
 
-    return matchesSearch && matchesFilter;
-  }).toList();
-}
+      return matchesSearch && matchesFilter;
+    }).toList();
+  }
 
+  // Creates a private, verified APK backup.
+  Future<void> _backupApplication(InstalledApplication app) async {
+    if (_backingUpPackages.contains(app.packageName)) return;
+
+    setState(() {
+      _backingUpPackages.add(app.packageName);
+    });
+
+    try {
+      final backup =
+          await _inventoryService.exportApplicationApk(
+        app.packageName,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _backingUpPackages.remove(app.packageName);
+      });
+
+      final files =
+          List<Map<String, dynamic>>.from(backup['files'] as List);
+
+      final backupDirectory =
+          backup['backupDirectory'] as String;
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF172638),
+            title: const Row(
+              children: [
+                Icon(
+                  Icons.verified,
+                  color: Colors.greenAccent,
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Backup Verified',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  app.appName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'The private APK backup was created successfully.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'APK files: ${files.length}',
+                  style: const TextStyle(color: Colors.white),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'SHA-256 integrity: VERIFIED',
+                  style: TextStyle(
+                    color: Colors.greenAccent,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'The original installed application has not been modified.',
+                  style: TextStyle(
+                    color: Colors.white60,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('CLOSE'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+
+                  _shareApplicationBackup(
+                    backupDirectory: backupDirectory,
+                    files: files,
+                    appName: app.appName,
+                  );
+                },
+                icon: const Icon(Icons.share),
+                label: const Text('SHARE / EXPORT'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _backingUpPackages.remove(app.packageName);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('APK backup failed: $e'),
+          backgroundColor: Colors.red.shade900,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    }
+  }
+
+  // Shares an already verified private APK backup.
+  Future<void> _shareApplicationBackup({
+    required String backupDirectory,
+    required List<Map<String, dynamic>> files,
+    required String appName,
+  }) async {
+    try {
+      final result =
+          await _inventoryService.shareApplicationApkBackup(
+        backupDirectory: backupDirectory,
+        files: files,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$appName backup is ready to share.'),
+            backgroundColor: const Color(0xFF176B45),
+          ),
+        );
+      } else {
+        throw Exception(
+          result['error'] ?? 'Unable to share APK backup.',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('APK sharing failed: $e'),
+          backgroundColor: Colors.red.shade900,
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    }
+  }
 
   Widget _buildSummaryCard() {
     final userApps =
@@ -168,111 +335,108 @@ List<InstalledApplication> get _filteredApplications {
   }
 
   Widget _buildFilterButton(String filter) {
-  final selected = _selectedFilter == filter;
+    final selected = _selectedFilter == filter;
 
-  return ChoiceChip(
-    label: Text(filter),
-    selected: selected,
-    onSelected: (_) {
-      setState(() {
-        _selectedFilter = filter;
-      });
-    },
-  );
-}
-
-  
-Color _getRiskColor(ApplicationRisk risk) {
-  switch (risk) {
-    case ApplicationRisk.low:
-      return Colors.greenAccent;
-    case ApplicationRisk.medium:
-      return Colors.orangeAccent;
-    case ApplicationRisk.high:
-      return Colors.deepOrangeAccent;
-    case ApplicationRisk.critical:
-      return Colors.redAccent;
-    case ApplicationRisk.unknown:
-      return Colors.grey;
+    return ChoiceChip(
+      label: Text(filter),
+      selected: selected,
+      onSelected: (_) {
+        setState(() {
+          _selectedFilter = filter;
+        });
+      },
+    );
   }
-}
 
-
-String _getRiskLabel(ApplicationRisk risk) {
-  switch (risk) {
-    case ApplicationRisk.low:
-      return 'LOW ATTENTION';
-    case ApplicationRisk.medium:
-      return 'MEDIUM ATTENTION';
-    case ApplicationRisk.high:
-      return 'HIGH ATTENTION';
-    case ApplicationRisk.critical:
-      return 'CRITICAL ATTENTION';
-    case ApplicationRisk.unknown:
-      return 'UNKNOWN';
+  Color _getRiskColor(ApplicationRisk risk) {
+    switch (risk) {
+      case ApplicationRisk.low:
+        return Colors.greenAccent;
+      case ApplicationRisk.medium:
+        return Colors.orangeAccent;
+      case ApplicationRisk.high:
+        return Colors.deepOrangeAccent;
+      case ApplicationRisk.critical:
+        return Colors.redAccent;
+      case ApplicationRisk.unknown:
+        return Colors.grey;
+    }
   }
-}
 
-
-String _getCategoryLabel(ApplicationCategory category) {
-  switch (category) {
-    case ApplicationCategory.criticalSystem:
-      return 'CRITICAL SYSTEM';
-    case ApplicationCategory.system:
-      return 'SYSTEM';
-    case ApplicationCategory.rootManagement:
-      return 'ROOT MANAGEMENT';
-    case ApplicationCategory.user:
-      return 'USER';
-    case ApplicationCategory.disabled:
-      return 'DISABLED';
-    case ApplicationCategory.unknown:
-      return 'UNKNOWN';
+  String _getRiskLabel(ApplicationRisk risk) {
+    switch (risk) {
+      case ApplicationRisk.low:
+        return 'LOW ATTENTION';
+      case ApplicationRisk.medium:
+        return 'MEDIUM ATTENTION';
+      case ApplicationRisk.high:
+        return 'HIGH ATTENTION';
+      case ApplicationRisk.critical:
+        return 'CRITICAL ATTENTION';
+      case ApplicationRisk.unknown:
+        return 'UNKNOWN';
+    }
   }
-}
-  
-Color _getCategoryColor(ApplicationCategory category) {
-  switch (category) {
-    case ApplicationCategory.criticalSystem:
-      return Colors.redAccent;
-    case ApplicationCategory.system:
-      return Colors.orangeAccent;
-    case ApplicationCategory.rootManagement:
-      return Colors.deepPurpleAccent;
-    case ApplicationCategory.user:
-      return Colors.greenAccent;
-    case ApplicationCategory.disabled:
-      return Colors.amberAccent;
-    case ApplicationCategory.unknown:
-      return Colors.grey;
-  }
-}
-  
 
+  String _getCategoryLabel(ApplicationCategory category) {
+    switch (category) {
+      case ApplicationCategory.criticalSystem:
+        return 'CRITICAL SYSTEM';
+      case ApplicationCategory.system:
+        return 'SYSTEM';
+      case ApplicationCategory.rootManagement:
+        return 'ROOT MANAGEMENT';
+      case ApplicationCategory.user:
+        return 'USER';
+      case ApplicationCategory.disabled:
+        return 'DISABLED';
+      case ApplicationCategory.unknown:
+        return 'UNKNOWN';
+    }
+  }
+
+  Color _getCategoryColor(ApplicationCategory category) {
+    switch (category) {
+      case ApplicationCategory.criticalSystem:
+        return Colors.redAccent;
+      case ApplicationCategory.system:
+        return Colors.orangeAccent;
+      case ApplicationCategory.rootManagement:
+        return Colors.deepPurpleAccent;
+      case ApplicationCategory.user:
+        return Colors.greenAccent;
+      case ApplicationCategory.disabled:
+        return Colors.amberAccent;
+      case ApplicationCategory.unknown:
+        return Colors.grey;
+    }
+  }
 
   Widget _buildApplicationCard(InstalledApplication app) {
     final appColor = app.isSystemApp
         ? Colors.orangeAccent
         : Colors.greenAccent;
 
+    final isBackingUp =
+        _backingUpPackages.contains(app.packageName);
+
     return Card(
       color: const Color(0xFF172638),
       margin: const EdgeInsets.only(bottom: 10),
-      child: ListTile(onTap: () {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => AppDetailsScreen(app: app),
-    ),
-  );
-},
+      child: ListTile(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AppDetailsScreen(app: app),
+            ),
+          );
+        },
         contentPadding: const EdgeInsets.all(12),
         leading: CircleAvatar(
           backgroundColor: appColor.withOpacity(0.15),
           child: Icon(
-            app.isSystemApp
-                ? Icons.settings
-                : Icons.android,
+            app.isSystemApp ? Icons.settings : Icons.android,
             color: appColor,
           ),
         ),
@@ -306,35 +470,52 @@ Color _getCategoryColor(ApplicationCategory category) {
                 ),
               ),
               const SizedBox(height: 6),
-              
-         Wrap(
-          spacing: 6,
-           runSpacing: 6,
-            children: [
-             _statusLabel(
-            _getCategoryLabel(app.category),
-            _getCategoryColor(app.category),
-          ),
-             _statusLabel(
-             _getRiskLabel(app.risk),
-             _getRiskColor(app.risk),
-           ),
-             _statusLabel(
-             app.enabled ? 'ENABLED' : 'DISABLED',
-              app.enabled
-          ? Colors.greenAccent
-          : Colors.redAccent,
-          ),
-          if (app.hasLaunchIntent)
-           _statusLabel(
-             'LAUNCHABLE',
-              Colors.lightBlueAccent,
-                 ),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  _statusLabel(
+                    _getCategoryLabel(app.category),
+                    _getCategoryColor(app.category),
+                  ),
+                  _statusLabel(
+                    _getRiskLabel(app.risk),
+                    _getRiskColor(app.risk),
+                  ),
+                  _statusLabel(
+                    app.enabled ? 'ENABLED' : 'DISABLED',
+                    app.enabled
+                        ? Colors.greenAccent
+                        : Colors.redAccent,
+                  ),
+                  if (app.hasLaunchIntent)
+                    _statusLabel(
+                      'LAUNCHABLE',
+                      Colors.lightBlueAccent,
+                    ),
                 ],
-               ),
-
+              ),
             ],
           ),
+        ),
+        trailing: IconButton(
+          tooltip: 'Create verified APK backup',
+          onPressed: isBackingUp
+              ? null
+              : () => _backupApplication(app),
+          icon: isBackingUp
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.lightBlueAccent,
+                  ),
+                )
+              : const Icon(
+                  Icons.backup_outlined,
+                  color: Colors.lightBlueAccent,
+                ),
         ),
         isThreeLine: true,
       ),
@@ -397,9 +578,7 @@ Color _getCategoryColor(ApplicationCategory category) {
                   padding: const EdgeInsets.all(16),
                   children: [
                     _buildSummaryCard(),
-
                     const SizedBox(height: 20),
-
                     const Text(
                       'INSTALLED APPLICATIONS',
                       style: TextStyle(
@@ -408,9 +587,7 @@ Color _getCategoryColor(ApplicationCategory category) {
                         letterSpacing: 1,
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
                     TextField(
                       controller: _searchController,
                       onChanged: (_) => setState(() {}),
@@ -429,27 +606,21 @@ Color _getCategoryColor(ApplicationCategory category) {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 12),
-
-                    
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-         children: [
-        _buildFilterButton('ALL'),
-        _buildFilterButton('USER'),
-        _buildFilterButton('SYSTEM'),
-        _buildFilterButton('CRITICAL'),
-        _buildFilterButton('ROOT'),
-        _buildFilterButton('DISABLED'),
-       _buildFilterButton('UNKNOWN'),
-     ],
-   ),
-
-
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _buildFilterButton('ALL'),
+                        _buildFilterButton('USER'),
+                        _buildFilterButton('SYSTEM'),
+                        _buildFilterButton('CRITICAL'),
+                        _buildFilterButton('ROOT'),
+                        _buildFilterButton('DISABLED'),
+                        _buildFilterButton('UNKNOWN'),
+                      ],
+                    ),
                     const SizedBox(height: 12),
-
                     if (_error != null)
                       Card(
                         color: const Color(0xFF38232A),
