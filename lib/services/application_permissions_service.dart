@@ -1,3 +1,4 @@
+
 import 'package:flutter/services.dart';
 
 enum PermissionStatus {
@@ -75,17 +76,24 @@ class ApplicationPermissionsService {
       throw ArgumentError('Package name cannot be empty.');
     }
 
-    final List<dynamic> permissions =
+    final response =
         await _channel.invokeMethod<List<dynamic>>(
-              'getApplicationPermissions',
-              {'packageName': packageName},
-            ) ??
-            [];
+      'getApplicationPermissions',
+      {'packageName': packageName.trim()},
+    );
 
-    return permissions.map((permission) {
-      return ApplicationPermission.fromMap(
-        Map<dynamic, dynamic>.from(permission as Map),
-      );
-    }).toList();
+    if (response == null) {
+      return [];
+    }
+
+    return response
+        .whereType<Map>()
+        .map(
+          (permission) =>
+              ApplicationPermission.fromMap(
+            Map<dynamic, dynamic>.from(permission),
+          ),
+        )
+        .toList();
   }
 }
