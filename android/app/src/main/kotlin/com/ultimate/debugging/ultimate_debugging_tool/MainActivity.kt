@@ -8,11 +8,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
-import androidx.core.content.FileProvider
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.security.MessageDigest
 import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbEndpoint
@@ -21,10 +16,15 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
@@ -246,10 +246,26 @@ class MainActivity : FlutterActivity() {
                 "isUsbHostSupported" -> {
                     result.success(
                         packageManager.hasSystemFeature(
-                            android.content.pm.PackageManager
-                                .FEATURE_USB_HOST
+                            PackageManager.FEATURE_USB_HOST
                         )
                     )
+                }
+
+                "exportApplicationApk" -> {
+
+                    val packageName =
+                        call.argument<String>("packageName")
+
+                    if (packageName.isNullOrBlank()) {
+                        result.error(
+                            "INVALID_PACKAGE",
+                            "A valid package name is required.",
+                            null
+                        )
+                        return@setMethodCallHandler
+                    }
+
+                    exportApplicationApk(packageName, result)
                 }
 
                 "getInstalledApplications" -> {
@@ -1177,5 +1193,191 @@ class MainActivity : FlutterActivity() {
             device,
             permissionIntent
         )
+    }
+
+    private fun calculateSha256(file: File): String {
+
+        val digest = MessageDigest.getInstance("SHA-256")
+
+        FileInputStream(file).use { input ->
+            val buffer = ByteArray(8192)
+
+            while (true) {
+                val bytesRead = input.read(buffer)
+
+                if (bytesRead == -1) {
+                    break
+                }
+
+                digest.update(buffer, 0, bytesRead)
+            }
+        }
+
+        return digest.digest().joinToString("") {
+            "%02X".format(it)
+        }
+    }
+
+    private fun exportApplicationApk(
+        packageName: String,
+        result: MethodChannel.Result
+    ) {
+
+        Thread({
+
+            var backupDirectory: File? = null
+
+            try {
+
+                // Retrieve the installed application's APK files.
+                val appInfo = packageManager.getApplicationInfo(
+                    packageName,
+                    0
+                )
+
+                val sourceFiles = mutableListOf<File>()
+
+                sourceFiles.add(File(appInfo.sourceDir))
+
+                appInfo.splitSourceDirs?.forEach { path ->
+                    sourceFiles.add(File(path))
+                }
+
+                if (
+                    sourceFiles.isEmpty() ||
+                    sourceFiles.any {
+                        !it.exists() || !it.isFile || !it.canRead()
+                    }
+                ) {
+                    throw IllegalStateException(
+                        "One or more APK source files are unavailable."
+                    )
+                }
+
+                // Create a private backup directory.
+                val safePackageName = packageName.replace(
+                    Regex("[^A-Za-z0-9._-]"),
+                    "_"
+                )
+
+                val directory = File(
+                    filesDir,
+                    "apk_exports/$safePackageName-${System.currentTimeMillis()}"
+                )
+
+                if (!directory.mkdirs()) {
+                    throw IllegalStateException(
+                        "Unable to create the APK backup directory."
+                    )
+                }
+
+                // Register the directory for cleanup only after creation.
+                backupDirectory = directory
+
+                val backupFiles = mutableListOf<Map<String, Any>>()
+
+                // Copy and verify every APK file.
+                sourceFiles.forEachIndexed { index, sourceFile ->
+
+                    val fileName = if (index == 0) {
+                        "base.apk"
+                    } else {
+                        "split_${index}.apk"
+                    }
+
+                    val destinationFile = File(
+                        directory,
+                        fileName
+                    )
+
+                    // Calculate the original hash before copying.
+                    val originalHash = calculateSha256(sourceFile)
+
+                    // Copy without modifying the original file.
+                    FileInputStream(sourceFile).use { input ->
+
+                        FileOutputStream(destinationFile).use { output ->
+
+                            input.copyTo(output)
+
+                            // Ensure copied data is flushed to storage.
+                            output.fd.sync()
+                        }
+                    }
+
+                    // Check file size.
+                    if (sourceFile.length() != destinationFile.length()) {
+                        throw IllegalStateException(
+                            "File size verification failed for $fileName"
+                        )
+                    }
+
+                    // Verify the copied file's SHA-256 fingerprint.
+                    val backupHash = calculateSha256(destinationFile)
+
+                    if (originalHash != backupHash) {
+                        throw IllegalStateException(
+                            "SHA-256 verification failed for $fileName"
+                        )
+                    }
+
+                    backupFiles.add(
+                        mapOf(
+                            "fileName" to fileName,
+                            "sizeBytes" to destinationFile.length(),
+                            "sha256" to backupHash,
+                            "verified" to true
+                        )
+                    )
+                }
+
+                // Return success only after every file passes verification.
+                runOnUiThread {
+
+                    result.success(
+                        mapOf(
+                            "success" to true,
+                            "packageName" to packageName,
+                            "backupDirectory" to directory.absolutePath,
+                            "fileCount" to backupFiles.size,
+                            "files" to backupFiles,
+                            "integrityVerified" to true
+                        )
+                    )
+                }
+
+            } catch (e: Exception) {
+
+                Log.e(
+                    TAG,
+                    "APK backup failed for $packageName",
+                    e
+                )
+
+                // Remove incomplete backup files.
+                backupDirectory?.let { directory ->
+                    try {
+                        directory.deleteRecursively()
+                    } catch (cleanupError: Exception) {
+                        Log.e(
+                            TAG,
+                            "Unable to clean up incomplete APK backup",
+                            cleanupError
+                        )
+                    }
+                }
+
+                // Return the error on Android's main thread.
+                runOnUiThread {
+
+                    result.error(
+                        "APK_EXPORT_ERROR",
+                        e.message ?: "Unable to export application APK.",
+                        null
+                    )
+                }
+            }
+
+        }, "APK-Backup-Worker").start()
     }
 }
