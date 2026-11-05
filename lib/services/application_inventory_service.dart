@@ -376,11 +376,17 @@ class ApplicationInventoryService {
       },
     );
 
-    if (response is! Map) {
+        if (response is! Map) {
       throw Exception('Invalid APK sharing response.');
     }
 
-    return Map<String, dynamic>.from(response);
-  }
+    final data = Map<dynamic, dynamic>.from(response);
 
-}
+    if (data['success'] != true ||
+        data['integrityVerified'] != true) {
+      throw Exception(
+        'APK backup verification failed before sharing.',
+      );
+    }
+
+    return Map<String, dynamic>.from(data);
