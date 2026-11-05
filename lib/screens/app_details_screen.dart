@@ -35,6 +35,25 @@ class AppDetailsScreen extends StatelessWidget {
     );
   }
 
+  String _formatTimestamp(int? timestamp) {
+    if (timestamp == null || timestamp <= 0) {
+      return 'Unavailable';
+    }
+
+    final date = DateTime.fromMillisecondsSinceEpoch(
+      timestamp,
+    ).toLocal();
+
+    String twoDigits(int value) =>
+        value.toString().padLeft(2, '0');
+
+    return '${date.year}-'
+        '${twoDigits(date.month)}-'
+        '${twoDigits(date.day)} '
+        '${twoDigits(date.hour)}:'
+        '${twoDigits(date.minute)}';
+  }
+
   Widget _detailItem(
     String title,
     String value, {
@@ -139,6 +158,113 @@ class AppDetailsScreen extends StatelessWidget {
         ),
         onTap: () => _openPermissions(context),
       ),
+    );
+  }
+
+  Widget _buildIntegritySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'APPLICATION INTEGRITY & INSTALLATION DETAILS',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1,
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        _detailItem(
+          'Package Information',
+          app.packageInfoAvailable
+              ? 'AVAILABLE'
+              : 'UNAVAILABLE',
+          icon: Icons.fact_check_outlined,
+        ),
+
+        _detailItem(
+          'Application UID',
+          app.uid?.toString() ?? 'Unavailable',
+          icon: Icons.fingerprint,
+        ),
+
+        _detailItem(
+          'Target SDK Version',
+          app.targetSdkVersion?.toString() ?? 'Unavailable',
+          icon: Icons.developer_mode,
+        ),
+
+        _detailItem(
+          'First Installation',
+          _formatTimestamp(app.firstInstallTime),
+          icon: Icons.install_mobile,
+        ),
+
+        _detailItem(
+          'Last Updated',
+          _formatTimestamp(app.lastUpdateTime),
+          icon: Icons.update,
+        ),
+
+        _detailItem(
+          'Reported Installation Source',
+          app.installSource == null ||
+                  app.installSource!.isEmpty
+              ? 'Unavailable or not reported'
+              : app.installSource!,
+          icon: Icons.source,
+        ),
+
+        Card(
+          color: const Color(0xFF172638),
+          margin: const EdgeInsets.only(bottom: 10),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  app.packageInfoAvailable
+                      ? Icons.verified_outlined
+                      : Icons.warning_amber,
+                  color: app.packageInfoAvailable
+                      ? Colors.greenAccent
+                      : Colors.orangeAccent,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    app.packageInfoAvailable
+                        ? 'Package information was successfully '
+                            'retrieved from Android.'
+                        : 'Android did not provide complete package '
+                            'information. Investigate further before '
+                            'making repair decisions.',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const Text(
+          'Installation source information may be unavailable '
+          'for manually installed applications, restored apps, '
+          'or applications whose installer information is not '
+          'reported by Android. Missing information is not proof '
+          'of application corruption.',
+          style: TextStyle(
+            color: Colors.white54,
+            fontSize: 11,
+          ),
+        ),
+      ],
     );
   }
 
@@ -305,6 +431,10 @@ class AppDetailsScreen extends StatelessWidget {
 
             const SizedBox(height: 20),
 
+            _buildIntegritySection(),
+
+            const SizedBox(height: 20),
+
             const Text(
               'APPLICATION SECURITY & PERMISSIONS',
               style: TextStyle(
@@ -359,6 +489,20 @@ class AppDetailsScreen extends StatelessWidget {
 
             const Text(
               'Important: This is an automated preliminary assessment, '
+              'not proof that an application is faulty or dangerous. '
+              'Investigate before performing repairs.',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 11,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+eliminary assessment, '
               'not proof that an application is faulty or dangerous. '
               'Investigate before performing repairs.',
               style: TextStyle(
