@@ -1269,6 +1269,17 @@ class MainActivity : FlutterActivity() {
                     sourceFiles.add(File(path))
                 }
 
+                // Reject duplicate APK source files.
+val sourcePaths = sourceFiles.map {
+    it.canonicalPath
+}
+
+if (sourcePaths.toSet().size != sourcePaths.size) {
+    throw IllegalStateException(
+        "Duplicate APK source files were detected."
+    )
+}
+
                 if (
                     sourceFiles.isEmpty() ||
                     sourceFiles.any {
