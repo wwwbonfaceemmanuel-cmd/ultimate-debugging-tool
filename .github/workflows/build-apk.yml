@@ -55,6 +55,35 @@ jobs:
             --project-name ultimate_debugging_tool \
             .
 
+      - name: Add AndroidX Core dependency
+        run: |
+          if [ -f android/app/build.gradle.kts ]; then
+
+            if ! grep -q 'androidx.core:core' android/app/build.gradle.kts; then
+              cat >> android/app/build.gradle.kts <<'EOF'
+
+          dependencies {
+              implementation("androidx.core:core:1.15.0")
+          }
+          EOF
+            fi
+
+          elif [ -f android/app/build.gradle ]; then
+
+            if ! grep -q 'androidx.core:core' android/app/build.gradle; then
+              cat >> android/app/build.gradle <<'EOF'
+
+          dependencies {
+              implementation 'androidx.core:core:1.15.0'
+          }
+          EOF
+            fi
+
+          else
+            echo "ERROR: Android app Gradle file not found."
+            exit 1
+          fi
+
       - name: Restore custom Android files
         run: |
           mkdir -p android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool
@@ -79,6 +108,10 @@ jobs:
           test -f android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/ApplicationInventory.kt
           test -f android/app/src/main/res/xml/file_paths.xml
 
+          grep -q 'androidx.core.content.FileProvider' android/app/src/main/AndroidManifest.xml
+          grep -q 'apk_exports/' android/app/src/main/res/xml/file_paths.xml
+          grep -q 'androidx.core:core:1.15.0' android/app/build.gradle.kts android/app/build.gradle
+
       - name: Get dependencies
         run: flutter pub get
 
@@ -90,4 +123,3 @@ jobs:
         with:
           name: ultimate-debugging-tool-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-          
