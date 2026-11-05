@@ -1527,13 +1527,33 @@ class MainActivity : FlutterActivity() {
             }
 
             if (
-                validatedFiles.isEmpty() ||
-                "base.apk" !in seenNames
-            ) {
-                throw IllegalStateException(
-                    "The backup must contain a verified base.apk file."
-                )
-            }
+    validatedFiles.isEmpty() ||
+    "base.apk" !in seenNames
+) {
+    throw IllegalStateException(
+        "The backup must contain a verified base.apk file."
+    )
+}
+
+// Verify that split APK numbering is complete.
+val splitIndexes = seenNames
+    .filter { it.startsWith("split_") }
+    .mapNotNull {
+        Regex("""^split_([0-9]+)\.apk$""")
+            .matchEntire(it)
+            ?.groupValues
+            ?.get(1)
+            ?.toIntOrNull()
+    }
+    .sorted()
+
+for (index in splitIndexes.indices) {
+    if (splitIndexes[index] != index + 1) {
+        throw IllegalStateException(
+            "The APK backup is missing a split file."
+        )
+    }
+}
 
             // Create secure FileProvider content URIs.
             val apkUris = ArrayList<Uri>()
