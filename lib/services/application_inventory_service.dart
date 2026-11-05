@@ -111,7 +111,6 @@ class InstalledApplication {
       isSystemApp: isSystemApp,
       hasLaunchIntent:
           map['hasLaunchIntent'] as bool? ?? false,
-
       uid: (map['uid'] as num?)?.toInt(),
       targetSdkVersion:
           (map['targetSdkVersion'] as num?)?.toInt(),
@@ -122,7 +121,6 @@ class InstalledApplication {
       installSource: map['installSource']?.toString(),
       packageInfoAvailable:
           map['packageInfoAvailable'] as bool? ?? false,
-
       signingInfoAvailable:
           map['signingInfoAvailable'] as bool? ?? false,
       hasMultipleSigners:
@@ -131,7 +129,6 @@ class InstalledApplication {
           (map['signerCount'] as num?)?.toInt() ??
               fingerprints.length,
       certificateSha256: fingerprints,
-
       category: classification.category,
       risk: classification.risk,
       classificationReason: classification.reason,
@@ -265,12 +262,14 @@ class ApplicationInventoryService {
     }).toList();
   }
 
-  
+  // Creates and verifies a private APK backup.
   Future<Map<String, dynamic>> exportApplicationApk(
     String packageName,
   ) async {
     if (packageName.trim().isEmpty) {
-      throw ArgumentError('A valid package name is required.');
+      throw ArgumentError(
+        'A valid package name is required.',
+      );
     }
 
     final dynamic response = await _channel.invokeMethod(
@@ -321,7 +320,9 @@ class ApplicationInventoryService {
           hash is! String ||
           size is! num ||
           verified != true) {
-        throw Exception('Incomplete APK verification metadata.');
+        throw Exception(
+          'Incomplete APK verification metadata.',
+        );
       }
 
       if (!RegExp(r'^(base|split_[0-9]+)\.apk$')
@@ -346,7 +347,9 @@ class ApplicationInventoryService {
     }
 
     if (data['fileCount'] != files.length ||
-        !files.any((file) => file['fileName'] == 'base.apk')) {
+        !files.any(
+          (file) => file['fileName'] == 'base.apk',
+        )) {
       throw Exception('APK backup file list is incomplete.');
     }
 
@@ -360,12 +363,15 @@ class ApplicationInventoryService {
     };
   }
 
+  // Shares an already verified private APK backup.
   Future<Map<String, dynamic>> shareApplicationApkBackup({
     required String backupDirectory,
     required List<Map<String, dynamic>> files,
   }) async {
     if (backupDirectory.trim().isEmpty || files.isEmpty) {
-      throw ArgumentError('A valid APK backup is required.');
+      throw ArgumentError(
+        'A valid APK backup is required.',
+      );
     }
 
     final dynamic response = await _channel.invokeMethod(
@@ -376,7 +382,7 @@ class ApplicationInventoryService {
       },
     );
 
-        if (response is! Map) {
+    if (response is! Map) {
       throw Exception('Invalid APK sharing response.');
     }
 
@@ -390,3 +396,5 @@ class ApplicationInventoryService {
     }
 
     return Map<String, dynamic>.from(data);
+  }
+}
