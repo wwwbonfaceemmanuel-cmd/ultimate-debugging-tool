@@ -184,6 +184,22 @@ class MainActivity : FlutterActivity() {
     }
 }
 
+             "executeAdbCommand" -> {
+                    executeTerminalCommand(
+                        call,
+                        result,
+                        requireRoot = false
+                    )
+                }
+
+                "executeRootCommand" -> {
+                    executeTerminalCommand(
+                        call,
+                        result,
+                        requireRoot = true
+                    )
+                }
+
                 "getUsbDevices" -> {
                     try {
                         result.success(getConnectedUsbDevices())
