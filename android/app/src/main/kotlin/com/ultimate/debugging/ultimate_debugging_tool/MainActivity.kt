@@ -1133,14 +1133,13 @@ if (
                 wirelessStatus = info.state.name
 
                 val isFinalState = when (info.state) {
-                    AdbConnection.State.CONNECTED,
-                    AdbConnection.State.AUTHENTICATION_REQUIRED,
-                    AdbConnection.State.FAILED,
-                    AdbConnection.State.CLOSED,
-                    AdbConnection.State.DISCONNECTED -> true
+    AdbConnection.State.CONNECTED,
+    AdbConnection.State.FAILED,
+    AdbConnection.State.CLOSED,
+    AdbConnection.State.DISCONNECTED -> true
 
-                    else -> false
-                }
+    else -> false
+}
 
                 if (isFinalState && resultSent.compareAndSet(false, true)) {
                     mainHandler.post {
