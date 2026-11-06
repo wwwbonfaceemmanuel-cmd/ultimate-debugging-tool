@@ -157,6 +157,30 @@ class MainActivity : FlutterActivity() {
 
             when (call.method) {
 
+                "executeStandardDiagnostic" -> {
+    val command = call.argument<String>("command")
+
+    if (command.isNullOrBlank()) {
+        result.error(
+            "INVALID_COMMAND",
+            "A command is required",
+            null
+        )
+    } else {
+        try {
+            result.success(
+                executeStandardDiagnostic(command)
+            )
+        } catch (e: Exception) {
+            result.error(
+                "DIAGNOSTIC_ERROR",
+                e.message ?: "Diagnostic command failed",
+                null
+            )
+        }
+    }
+}
+
                 "getUsbDevices" -> {
                     try {
                         result.success(getConnectedUsbDevices())
