@@ -15,7 +15,6 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Allows the shared ADB engine to communicate with
  * devices over a wireless network.
  *
- * This transport handles the standard ADB connection.
  * Modern Wireless Debugging pairing is a separate protocol
  * and is implemented independently.
  */
@@ -32,6 +31,7 @@ class AdbTcpTransport(
 
     private val closed = AtomicBoolean(true)
 
+    private val lifecycleLock = Any()
     private val readLock = Any()
     private val writeLock = Any()
 
@@ -50,25 +50,12 @@ class AdbTcpTransport(
 
     /**
      * Opens the TCP connection.
+     *
+     * The socket is registered before connecting so that
+     * close() can cancel an in-progress connection attempt.
      */
-    @Synchronized
     @Throws(IOException::class)
     override fun open() {
-        if (socket != null) {
-            val existingSocket = socket
-
-            if (
-                existingSocket != null &&
-                existingSocket.isConnected &&
-                !existingSocket.isClosed
-            ) {
-                throw IOException(
-                    "TCP transport is already open."
-                )
-            }
-
-            socket = null
-        }
 
         if (host.isBlank()) {
             throw IOException(
@@ -82,6 +69,18 @@ class AdbTcpTransport(
 
         val newSocket = Socket()
 
+        synchronized(lifecycleLock) {
+
+            if (!closed.get()) {
+                throw IOException(
+                    "TCP transport is already open or connecting."
+                )
+            }
+
+            socket = newSocket
+            closed.set(false)
+        }
+
         try {
             newSocket.tcpNoDelay = true
             newSocket.keepAlive = true
@@ -91,20 +90,40 @@ class AdbTcpTransport(
                 connectTimeoutMs
             )
 
+            if (
+                closed.get() ||
+                socket !== newSocket
+            ) {
+                throw IOException(
+                    "TCP connection was cancelled."
+                )
+            }
+
             newSocket.soTimeout = readTimeoutMs
 
-            socket = newSocket
-            closed.set(false)
+            if (
+                closed.get() ||
+                socket !== newSocket
+            ) {
+                throw IOException(
+                    "TCP connection was cancelled."
+                )
+            }
 
         } catch (error: Exception) {
+
+            synchronized(lifecycleLock) {
+                if (socket === newSocket) {
+                    socket = null
+                    closed.set(true)
+                }
+            }
+
             try {
                 newSocket.close()
             } catch (_: Exception) {
                 // Continue with error handling.
             }
-
-            socket = null
-            closed.set(true)
 
             throw if (error is IOException) {
                 error
@@ -121,8 +140,11 @@ class AdbTcpTransport(
      * Sends one complete ADB packet.
      */
     @Throws(IOException::class)
-    override fun writePacket(packet: AdbProtocol.AdbPacket) {
+    override fun writePacket(
+        packet: AdbProtocol.AdbPacket
+    ) {
         synchronized(writeLock) {
+
             val activeSocket = requireOpenSocket()
 
             try {
@@ -144,12 +166,14 @@ class AdbTcpTransport(
     /**
      * Receives one complete ADB packet.
      *
-     * Reads the ADB header first, validates its payload length,
-     * then reads the complete payload.
+     * Reads and validates the ADB header before
+     * allocating and reading the payload.
      */
     @Throws(IOException::class)
     override fun readPacket(): AdbProtocol.AdbPacket {
+
         synchronized(readLock) {
+
             val activeSocket = requireOpenSocket()
 
             try {
@@ -193,6 +217,7 @@ class AdbTcpTransport(
                 )
 
                 if (dataLength > 0) {
+
                     val payload = ByteArray(dataLength)
 
                     readFully(input, payload)
@@ -208,6 +233,7 @@ class AdbTcpTransport(
 
                 return try {
                     AdbProtocol.decode(completePacket)
+
                 } catch (error: IllegalArgumentException) {
                     throw IOException(
                         "Received an invalid ADB packet.",
@@ -227,9 +253,8 @@ class AdbTcpTransport(
     /**
      * Reads until the requested number of bytes is received.
      *
-     * A temporary socket read timeout does not invalidate
-     * the connection. Reading resumes until the complete
-     * packet arrives or the transport is closed.
+     * Temporary socket timeouts do not invalidate an
+     * otherwise open connection.
      */
     @Throws(IOException::class)
     private fun readFully(
@@ -239,6 +264,7 @@ class AdbTcpTransport(
         var offset = 0
 
         while (offset < buffer.size) {
+
             if (closed.get()) {
                 throw IOException(
                     "TCP transport is closed."
@@ -268,13 +294,14 @@ class AdbTcpTransport(
                 offset += received
 
             } catch (_: SocketTimeoutException) {
-                // Temporary inactivity is not a connection failure.
-                // Retry while the transport remains open.
+
                 if (closed.get()) {
                     throw IOException(
                         "TCP transport was closed during reading."
                     )
                 }
+
+                // Retry after temporary inactivity.
             }
         }
     }
@@ -283,6 +310,7 @@ class AdbTcpTransport(
      * Returns the active socket only when it is usable.
      */
     private fun requireOpenSocket(): Socket {
+
         if (closed.get()) {
             throw IOException(
                 "TCP transport is closed."
@@ -313,6 +341,7 @@ class AdbTcpTransport(
         message: String,
         error: Exception
     ): IOException {
+
         if (error is IOException) {
             return error
         }
@@ -321,30 +350,25 @@ class AdbTcpTransport(
     }
 
     /**
-     * Closes the socket.
+     * Closes the socket and releases blocked operations.
      *
-     * Socket shutdown and close release blocked reads and
-     * writes so the owning ADB connection can clean up.
+     * This method is deliberately not synchronized with
+     * open(), allowing cancellation during connection setup.
      */
-    @Synchronized
     override fun close() {
-        if (!closed.compareAndSet(false, true)) {
-            return
-        }
 
-        val activeSocket = socket
-        socket = null
+        val activeSocket = synchronized(lifecycleLock) {
 
-        try {
-            activeSocket?.shutdownInput()
-        } catch (_: Exception) {
-            // Socket may already be closed.
-        }
+            if (closed.get() && socket == null) {
+                return
+            }
 
-        try {
-            activeSocket?.shutdownOutput()
-        } catch (_: Exception) {
-            // Socket may already be closed.
+            closed.set(true)
+
+            val currentSocket = socket
+            socket = null
+
+            currentSocket
         }
 
         try {
