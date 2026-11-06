@@ -82,16 +82,37 @@ class AdbConnection(
     private var shellSession: AdbShellSession? = null
 
     private val connectionLock = Any()
+    private val stateNotificationLock = Any()
+
+    // Protected by connectionLock.
+    private var stateRevision = 0L
 
     /**
-     * Safely notifies the owner whenever the connection state changes.
-     * Listener errors must never interrupt ADB communication.
+     * Notifies the owner of a state change.
+     *
+     * Older notifications are discarded if a newer state
+     * transition has already occurred.
      */
-    private fun notifyStateChanged(newState: State) {
-        try {
-            onStateChanged?.invoke(newState)
-        } catch (_: Exception) {
-            // A UI/event listener must not break the ADB connection.
+    private fun notifyStateChanged(
+        newState: State,
+        revision: Long
+    ) {
+        synchronized(stateNotificationLock) {
+            synchronized(connectionLock) {
+
+                if (
+                    stateRevision != revision ||
+                    state != newState
+                ) {
+                    return
+                }
+
+                try {
+                    onStateChanged?.invoke(newState)
+                } catch (_: Exception) {
+                    // Listener errors must never interrupt ADB communication.
+                }
+            }
         }
     }
 
@@ -324,6 +345,8 @@ class AdbConnection(
 
         updateState(State.CONNECTED)
 
+        checkNotCancelled()
+
         return HandshakeResult.Connected(
             negotiatedVersion,
             negotiatedMaxDataSize,
@@ -339,6 +362,8 @@ class AdbConnection(
     private fun handleAuthenticationRequest(
         packet: AdbProtocol.AdbPacket
     ): HandshakeResult {
+
+        checkNotCancelled()
 
         if (packet.arg0 != AdbProtocol.AUTH_TOKEN) {
             return reject(
@@ -388,28 +413,35 @@ class AdbConnection(
 
     /**
      * Starts a fresh connection attempt.
+     *
+     * A failed or closed connection must use a new
+     * AdbConnection instance for another attempt.
      */
     private fun beginConnection() {
 
-        synchronized(connectionLock) {
+        val revision = synchronized(connectionLock) {
 
-            if (state == State.CONNECTING ||
-                state == State.AUTHENTICATION_REQUIRED
-            ) {
+            if (state != State.DISCONNECTED) {
                 throw IOException(
-                    "An ADB connection attempt is already running."
-                )
-            }
+                    when (state) {
+                        State.CONNECTING ->
+                            "An ADB connection attempt is already running."
 
-            if (state == State.CONNECTED) {
-                throw IOException(
-                    "ADB connection is already established."
-                )
-            }
+                        State.AUTHENTICATION_REQUIRED ->
+                            "ADB authentication is already in progress."
 
-            if (state == State.CLOSED) {
-                throw IOException(
-                    "ADB connection has been closed."
+                        State.CONNECTED ->
+                            "ADB connection is already established."
+
+                        State.FAILED ->
+                            "The previous ADB connection failed. Create a new connection instance."
+
+                        State.CLOSED ->
+                            "ADB connection has been closed."
+
+                        State.DISCONNECTED ->
+                            "ADB is disconnected."
+                    }
                 )
             }
 
@@ -420,10 +452,19 @@ class AdbConnection(
             deviceBanner = ""
             deviceFeatures = emptyList()
 
+            shellSession = null
+
             state = State.CONNECTING
+            stateRevision++
+            stateRevision
         }
 
-        notifyStateChanged(State.CONNECTING)
+        notifyStateChanged(
+            State.CONNECTING,
+            revision
+        )
+
+        checkNotCancelled()
     }
 
     /**
@@ -432,16 +473,21 @@ class AdbConnection(
      */
     private fun updateState(newState: State) {
 
-        synchronized(connectionLock) {
+        val revision = synchronized(connectionLock) {
 
             if (cancelled || state == State.CLOSED) {
                 throw AdbConnectionCancelledException()
             }
 
             state = newState
+            stateRevision++
+            stateRevision
         }
 
-        notifyStateChanged(newState)
+        notifyStateChanged(
+            newState,
+            revision
+        )
     }
 
     /**
@@ -468,9 +514,6 @@ class AdbConnection(
 
     /**
      * Handles errors without overwriting the CLOSED state.
-     *
-     * Intentional cancellation is reported separately from
-     * genuine connection failures.
      */
     private fun handleConnectionError(
         message: String,
@@ -478,6 +521,7 @@ class AdbConnection(
     ): Nothing {
 
         var cancelledConnection = false
+        var revision = 0L
 
         synchronized(connectionLock) {
 
@@ -488,6 +532,9 @@ class AdbConnection(
             } else {
                 state = State.FAILED
             }
+
+            stateRevision++
+            revision = stateRevision
         }
 
         if (cancelledConnection) {
@@ -497,7 +544,10 @@ class AdbConnection(
             )
         }
 
-        notifyStateChanged(State.FAILED)
+        notifyStateChanged(
+            State.FAILED,
+            revision
+        )
 
         if (error is IOException) {
             throw error
@@ -552,24 +602,35 @@ class AdbConnection(
      */
     private fun handleShellSessionFailure(error: IOException) {
 
-        val shouldClose = synchronized(connectionLock) {
+        var revision: Long? = null
+        var failedSession: AdbShellSession? = null
 
-            if (cancelled || state == State.CLOSED) {
-                false
-            } else {
-                cancelled = true
+        synchronized(connectionLock) {
+
+            if (!cancelled && state != State.CLOSED) {
+
                 state = State.FAILED
-                true
+                stateRevision++
+
+                revision = stateRevision
+
+                failedSession = shellSession
+                shellSession = null
             }
         }
 
-        if (!shouldClose) {
-            return
+        val failedRevision = revision ?: return
+
+        notifyStateChanged(
+            State.FAILED,
+            failedRevision
+        )
+
+        try {
+            failedSession?.close()
+        } catch (_: Exception) {
+            // Continue with transport cleanup.
         }
-
-        notifyStateChanged(State.FAILED)
-
-        shellSession?.close()
 
         try {
             transport.close()
@@ -590,28 +651,40 @@ class AdbConnection(
      */
     fun close() {
 
-        val shouldNotify = synchronized(connectionLock) {
+        var revision: Long? = null
+        var sessionToClose: AdbShellSession? = null
+
+        synchronized(connectionLock) {
 
             if (state == State.CLOSED && cancelled) {
-                false
-            } else {
-                cancelled = true
-                state = State.CLOSED
-                true
+                return
             }
+
+            cancelled = true
+            state = State.CLOSED
+
+            stateRevision++
+            revision = stateRevision
+
+            sessionToClose = shellSession
+            shellSession = null
         }
 
-        if (shouldNotify) {
-            notifyStateChanged(State.CLOSED)
-        }
+        notifyStateChanged(
+            State.CLOSED,
+            revision!!
+        )
 
-        shellSession?.close()
-        shellSession = null
+        try {
+            sessionToClose?.close()
+        } catch (_: Exception) {
+            // Continue with transport cleanup.
+        }
 
         try {
             transport.close()
         } catch (_: Exception) {
-            // Continue with the closed state.
+            // Continue with cleanup.
         }
     }
 }
