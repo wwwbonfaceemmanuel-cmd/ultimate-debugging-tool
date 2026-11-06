@@ -80,7 +80,9 @@ class AdbUsbTransport(
 
         try {
             if (!usbConnection.claimInterface(selectedInterface, true)) {
-                throw IOException("Unable to claim the ADB USB interface.")
+                throw IOException(
+                    "Unable to claim the ADB USB interface."
+                )
             }
 
             claimed = true
@@ -136,7 +138,9 @@ class AdbUsbTransport(
             }
         }
 
-        throw IOException("Required USB bulk endpoint was not found.")
+        throw IOException(
+            "Required USB bulk endpoint was not found."
+        )
     }
 
     /**
@@ -146,8 +150,11 @@ class AdbUsbTransport(
     override fun writePacket(packet: AdbProtocol.AdbPacket) {
         synchronized(writeLock) {
             val usbConnection = requireOpenConnection()
+
             val endpoint = bulkOutEndpoint
-                ?: throw IOException("Bulk OUT endpoint is unavailable.")
+                ?: throw IOException(
+                    "Bulk OUT endpoint is unavailable."
+                )
 
             val bytes = AdbProtocol.encode(packet)
             var offset = 0
@@ -186,8 +193,11 @@ class AdbUsbTransport(
     override fun readPacket(): AdbProtocol.AdbPacket {
         synchronized(readLock) {
             val usbConnection = requireOpenConnection()
+
             val endpoint = bulkInEndpoint
-                ?: throw IOException("Bulk IN endpoint is unavailable.")
+                ?: throw IOException(
+                    "Bulk IN endpoint is unavailable."
+                )
 
             val header = readExact(
                 usbConnection,
@@ -209,7 +219,9 @@ class AdbUsbTransport(
                 dataLength < 0 ||
                 dataLength > AdbProtocol.MAX_DATA_SIZE
             ) {
-                throw IOException("Invalid ADB packet payload length.")
+                throw IOException(
+                    "Invalid ADB packet payload length."
+                )
             }
 
             val completePacket = ByteArray(
@@ -253,6 +265,9 @@ class AdbUsbTransport(
 
     /**
      * Reads exactly the requested number of bytes.
+     *
+     * A finite timeout allows the reader to periodically
+     * check whether the transport has been closed.
      */
     @Throws(IOException::class)
     private fun readExact(
@@ -279,10 +294,16 @@ class AdbUsbTransport(
                 READ_TIMEOUT_MS
             )
 
-            if (received <= 0) {
+            if (received < 0) {
                 throw IOException(
                     "USB bulk read failed or the device disconnected."
                 )
+            }
+
+            if (received == 0) {
+                ensureOpen()
+
+                continue
             }
 
             offset += received
@@ -291,9 +312,14 @@ class AdbUsbTransport(
         return result
     }
 
+    /**
+     * Checks whether the USB transport is still available.
+     */
     private fun ensureOpen() {
         if (closed || connection == null) {
-            throw IOException("USB transport is closed.")
+            throw IOException(
+                "USB transport is closed."
+            )
         }
     }
 
@@ -301,7 +327,9 @@ class AdbUsbTransport(
         ensureOpen()
 
         return connection
-            ?: throw IOException("USB transport has not been opened.")
+            ?: throw IOException(
+                "USB transport has not been opened."
+            )
     }
 
     /**
@@ -324,7 +352,9 @@ class AdbUsbTransport(
         if (usbConnection != null) {
             if (interfaceClaimed && selectedInterface != null) {
                 try {
-                    usbConnection.releaseInterface(selectedInterface)
+                    usbConnection.releaseInterface(
+                        selectedInterface
+                    )
                 } catch (_: Exception) {
                     // Continue closing the USB connection.
                 }
