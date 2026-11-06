@@ -693,9 +693,10 @@ class MainActivity : FlutterActivity() {
                 val usbConnected =
                     adbConnection?.isConnected() == true
 
-                val wirelessConnected =
-                    wirelessStatus == "CONNECTED" &&
-                    wirelessManager != null
+              val wirelessConnected =
+                  wirelessStatus == "CONNECTED" &&
+                   wirelessManager?.getConnectionInfo()?.state ==
+                   AdbConnection.State.CONNECTED
 
                 if (usbConnected && wirelessConnected) {
                     throw IOException(
