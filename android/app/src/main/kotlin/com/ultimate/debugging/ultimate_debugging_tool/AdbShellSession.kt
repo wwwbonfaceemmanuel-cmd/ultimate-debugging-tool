@@ -488,7 +488,7 @@ private fun closeFailedStream(
     readerFailure?.let { failure ->
         throw failure
     }
-}1
+}
 
     /**
      * Stops the shell reader.
