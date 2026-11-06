@@ -267,6 +267,7 @@ class AdbWirelessManager(
         } finally {
 
             if (!retainConnection) {
+                attemptCounter.compareAndSet(attemptId, attemptId + 1)
 
                 synchronized(this) {
                     if (connection === activeConnection) {
