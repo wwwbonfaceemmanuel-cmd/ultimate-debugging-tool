@@ -85,7 +85,7 @@ class _CommandTerminalScreenState
 
   try {
     final output = await _terminalChannel.invokeMethod<String>(
-      'executeStandardDiagnostic',
+            method,
       {
         'command': command,
       },
