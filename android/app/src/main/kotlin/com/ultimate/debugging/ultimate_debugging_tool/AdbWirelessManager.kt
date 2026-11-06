@@ -276,6 +276,28 @@ class AdbWirelessManager(
     }
 
     /**
+ * Executes a command through the authenticated wireless ADB session.
+ */
+fun executeCommand(
+    command: String,
+    timeoutMs: Long = 30000L
+): AdbShellSession.CommandResult {
+
+    val activeConnection = connection
+        ?: throw IOException("Wireless ADB is not connected.")
+
+    if (!activeConnection.isConnected()) {
+        throw IOException(
+            "Wireless ADB must be connected and authenticated first."
+        )
+    }
+
+    return activeConnection
+        .createShellSession()
+        .execute(command, timeoutMs)
+}
+
+    /**
      * Disconnects the wireless ADB session.
      */
     @Synchronized
