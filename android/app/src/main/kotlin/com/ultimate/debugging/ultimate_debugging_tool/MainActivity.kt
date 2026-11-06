@@ -1084,18 +1084,32 @@ if (
             return
         }
 
-        if (
-            wirelessStatus == "CONNECTED" ||
-            wirelessStatus == "AUTHENTICATION_REQUIRED" ||
-            wirelessStatus == "CONNECTING"
-        ) {
-            result.error(
-                "WIRELESS_BUSY",
-                "A wireless ADB session is already active.",
-                null
-            )
-            return
-        }
+        val currentUsbStatus = getCurrentAdbStatus()
+
+if (
+    wirelessStatus in setOf(
+        "CONNECTED",
+        "AUTHENTICATION_REQUIRED",
+        "CONNECTING"
+    ) ||
+    currentUsbStatus in setOf(
+        "CONNECTED",
+        "AUTHENTICATION_REQUIRED",
+        "CONNECTING"
+    ) ||
+    adbStatus in setOf(
+        "CONNECTED",
+        "AUTHENTICATION_REQUIRED",
+        "CONNECTING"
+    )
+) {
+    result.error(
+        "WIRELESS_BUSY",
+        "Wireless ADB cannot connect while USB ADB is active or connecting. Disconnect USB ADB first.",
+        null
+    )
+    return
+}
 
         val manager = wirelessManager ?: AdbWirelessManager(
             authentication = AdbAuthentication(),
