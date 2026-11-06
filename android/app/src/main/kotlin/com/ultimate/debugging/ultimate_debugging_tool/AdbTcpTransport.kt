@@ -3,9 +3,10 @@ package com.ultimate.debugging.ultimate_debugging_tool
 
 import java.io.EOFException
 import java.io.IOException
+import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -16,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * This transport handles the standard ADB connection.
  * Modern Wireless Debugging pairing is a separate protocol
- * and will be implemented independently.
+ * and is implemented independently.
  */
 class AdbTcpTransport(
     private val host: String,
@@ -37,18 +38,42 @@ class AdbTcpTransport(
     @Volatile
     private var socket: Socket? = null
 
+    init {
+        require(connectTimeoutMs > 0) {
+            "TCP connection timeout must be positive."
+        }
+
+        require(readTimeoutMs > 0) {
+            "TCP read timeout must be positive."
+        }
+    }
+
     /**
      * Opens the TCP connection.
      */
     @Synchronized
     @Throws(IOException::class)
     override fun open() {
-        if (socket != null && socket?.isConnected == true && !socket!!.isClosed) {
-            throw IOException("TCP transport is already open.")
+        if (socket != null) {
+            val existingSocket = socket
+
+            if (
+                existingSocket != null &&
+                existingSocket.isConnected &&
+                !existingSocket.isClosed
+            ) {
+                throw IOException(
+                    "TCP transport is already open."
+                )
+            }
+
+            socket = null
         }
 
         if (host.isBlank()) {
-            throw IOException("A valid device IP address is required.")
+            throw IOException(
+                "A valid device IP address is required."
+            )
         }
 
         if (port !in 1..65535) {
@@ -78,10 +103,16 @@ class AdbTcpTransport(
                 // Continue with error handling.
             }
 
+            socket = null
+            closed.set(true)
+
             throw if (error is IOException) {
                 error
             } else {
-                IOException("Unable to establish wireless ADB connection.", error)
+                IOException(
+                    "Unable to establish wireless ADB connection.",
+                    error
+                )
             }
         }
     }
@@ -124,7 +155,10 @@ class AdbTcpTransport(
             try {
                 val input = activeSocket.getInputStream()
 
-                val header = ByteArray(AdbProtocol.HEADER_SIZE)
+                val header = ByteArray(
+                    AdbProtocol.HEADER_SIZE
+                )
+
                 readFully(input, header)
 
                 val headerBuffer = java.nio.ByteBuffer
@@ -141,7 +175,9 @@ class AdbTcpTransport(
                     dataLength < 0 ||
                     dataLength > AdbProtocol.MAX_DATA_SIZE
                 ) {
-                    throw IOException("Invalid ADB packet payload length.")
+                    throw IOException(
+                        "Invalid ADB packet payload length."
+                    )
                 }
 
                 val completePacket = ByteArray(
@@ -158,6 +194,7 @@ class AdbTcpTransport(
 
                 if (dataLength > 0) {
                     val payload = ByteArray(dataLength)
+
                     readFully(input, payload)
 
                     System.arraycopy(
@@ -189,54 +226,89 @@ class AdbTcpTransport(
 
     /**
      * Reads until the requested number of bytes is received.
+     *
+     * A temporary socket read timeout does not invalidate
+     * the connection. Reading resumes until the complete
+     * packet arrives or the transport is closed.
      */
     @Throws(IOException::class)
     private fun readFully(
-        input: java.io.InputStream,
+        input: InputStream,
         buffer: ByteArray
     ) {
         var offset = 0
 
         while (offset < buffer.size) {
             if (closed.get()) {
-                throw IOException("TCP transport is closed.")
-            }
-
-            val received = input.read(
-                buffer,
-                offset,
-                minOf(buffer.size - offset, MAX_TRANSFER_CHUNK)
-            )
-
-            if (received < 0) {
-                throw EOFException(
-                    "Wireless ADB device closed the connection."
+                throw IOException(
+                    "TCP transport is closed."
                 )
             }
 
-            if (received == 0) {
-                continue
-            }
+            try {
+                val received = input.read(
+                    buffer,
+                    offset,
+                    minOf(
+                        buffer.size - offset,
+                        MAX_TRANSFER_CHUNK
+                    )
+                )
 
-            offset += received
+                if (received < 0) {
+                    throw EOFException(
+                        "Wireless ADB device closed the connection."
+                    )
+                }
+
+                if (received == 0) {
+                    continue
+                }
+
+                offset += received
+
+            } catch (_: SocketTimeoutException) {
+                // Temporary inactivity is not a connection failure.
+                // Retry while the transport remains open.
+                if (closed.get()) {
+                    throw IOException(
+                        "TCP transport was closed during reading."
+                    )
+                }
+            }
         }
     }
 
+    /**
+     * Returns the active socket only when it is usable.
+     */
     private fun requireOpenSocket(): Socket {
         if (closed.get()) {
-            throw IOException("TCP transport is closed.")
+            throw IOException(
+                "TCP transport is closed."
+            )
         }
 
         val activeSocket = socket
-            ?: throw IOException("TCP socket has not been opened.")
+            ?: throw IOException(
+                "TCP socket has not been opened."
+            )
 
-        if (activeSocket.isClosed || !activeSocket.isConnected) {
-            throw IOException("Wireless ADB connection is unavailable.")
+        if (
+            activeSocket.isClosed ||
+            !activeSocket.isConnected
+        ) {
+            throw IOException(
+                "Wireless ADB connection is unavailable."
+            )
         }
 
         return activeSocket
     }
 
+    /**
+     * Converts transport failures into meaningful IOExceptions.
+     */
     private fun transportError(
         message: String,
         error: Exception
@@ -251,8 +323,8 @@ class AdbTcpTransport(
     /**
      * Closes the socket.
      *
-     * Closing the socket also interrupts a blocked read,
-     * allowing connection cancellation.
+     * Socket shutdown and close release blocked reads and
+     * writes so the owning ADB connection can clean up.
      */
     @Synchronized
     override fun close() {
