@@ -23,14 +23,14 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Only one command is executed at a time per session.
  *
- * A failed command invalidates this session. The owner must
- * disconnect and establish a fresh ADB connection before
- * executing another command.
+ * A failed command invalidates this session and notifies
+ * the owning ADB connection so it can close the transport.
  */
 class AdbShellSession(
     private val transport: AdbTransport,
     private val maxDataSize: Int,
-    private val supportsShellV2: Boolean
+    private val supportsShellV2: Boolean,
+    private val onSessionFailed: ((IOException) -> Unit)? = null
 ) : Closeable {
 
     data class CommandResult(
@@ -52,6 +52,7 @@ class AdbShellSession(
     }
 
     private val closed = AtomicBoolean(false)
+    private val failureNotified = AtomicBoolean(false)
     private val nextLocalId = AtomicInteger(MIN_LOCAL_ID)
 
     private val incomingPackets =
@@ -66,6 +67,12 @@ class AdbShellSession(
     private val writeLock = Any()
     private val commandLock = Any()
 
+    init {
+        require(maxDataSize > 0) {
+            "ADB maximum data size must be positive."
+        }
+    }
+
     private val readerThread = Thread(
         {
             readIncomingPackets()
@@ -74,12 +81,6 @@ class AdbShellSession(
     ).apply {
         isDaemon = true
         start()
-    }
-
-    init {
-        require(maxDataSize > 0) {
-            "ADB maximum data size must be positive."
-        }
     }
 
     /**
@@ -408,13 +409,6 @@ class AdbShellSession(
 
     /**
      * Decodes shell_v2 channel frames.
-     *
-     * Each frame contains:
-     * - One channel byte.
-     * - Four-byte little-endian payload length.
-     * - Payload bytes.
-     *
-     * Frames may be split across multiple ADB packets.
      */
     private fun processShellV2Data(
         incoming: ByteArray,
@@ -512,17 +506,26 @@ class AdbShellSession(
     }
 
     /**
-     * Marks the session unusable after a command failure.
-     *
-     * The owning ADB connection must be disconnected and
-     * re-established before another command can run.
+     * Invalidates the session and notifies its owner once.
      */
     private fun invalidateSession(error: IOException) {
+        if (closed.get()) {
+            return
+        }
+
         if (sessionFailure == null) {
             sessionFailure = error
         }
 
         readerThread.interrupt()
+
+        if (failureNotified.compareAndSet(false, true)) {
+            try {
+                onSessionFailed?.invoke(error)
+            } catch (_: Exception) {
+                // Preserve the original session failure.
+            }
+        }
     }
 
     /**
