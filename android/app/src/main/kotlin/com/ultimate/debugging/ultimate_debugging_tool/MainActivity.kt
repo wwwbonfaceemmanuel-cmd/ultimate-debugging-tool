@@ -392,6 +392,198 @@ class MainActivity : FlutterActivity() {
         )
     }
 
+    private fun executeStandardDiagnostic(command: String): String {
+
+    return when (command.trim().lowercase()) {
+
+        "help" -> {
+            """
+            ULTIMATE DEBUGGING TOOL
+            Standard Android Commands
+
+            help         - Show available commands
+            device-info  - Show device information
+            battery      - Show battery information
+            storage      - Show internal storage information
+            memory       - Show RAM information
+            uptime       - Show device uptime
+            """.trimIndent()
+        }
+
+        "device-info" -> {
+            """
+            DEVICE INFORMATION
+
+            Manufacturer: ${Build.MANUFACTURER}
+            Brand: ${Build.BRAND}
+            Model: ${Build.MODEL}
+            Device: ${Build.DEVICE}
+            Android Version: ${Build.VERSION.RELEASE}
+            SDK Version: ${Build.VERSION.SDK_INT}
+            Hardware: ${Build.HARDWARE}
+            """.trimIndent()
+        }
+
+        "battery" -> {
+
+            val batteryIntent = registerReceiver(
+                null,
+                android.content.IntentFilter(
+                    Intent.ACTION_BATTERY_CHANGED
+                )
+            )
+
+            if (batteryIntent == null) {
+                "Unable to retrieve battery information."
+            } else {
+
+                val level = batteryIntent.getIntExtra(
+                    BatteryManager.EXTRA_LEVEL,
+                    -1
+                )
+
+                val scale = batteryIntent.getIntExtra(
+                    BatteryManager.EXTRA_SCALE,
+                    -1
+                )
+
+                val percentage =
+                    if (level >= 0 && scale > 0) {
+                        (level * 100) / scale
+                    } else {
+                        -1
+                    }
+
+                val status = batteryIntent.getIntExtra(
+                    BatteryManager.EXTRA_STATUS,
+                    -1
+                )
+
+                val charging = when (status) {
+                    BatteryManager.BATTERY_STATUS_CHARGING ->
+                        "Charging"
+
+                    BatteryManager.BATTERY_STATUS_FULL ->
+                        "Full"
+
+                    BatteryManager.BATTERY_STATUS_DISCHARGING ->
+                        "Discharging"
+
+                    BatteryManager.BATTERY_STATUS_NOT_CHARGING ->
+                        "Not charging"
+
+                    else -> "Unknown"
+                }
+
+                """
+                BATTERY INFORMATION
+
+                Battery Level: ${
+                    if (percentage >= 0) "$percentage%" else "Unknown"
+                }
+                Status: $charging
+                """.trimIndent()
+            }
+        }
+
+        "storage" -> {
+
+            val stat = StatFs(
+                Environment.getDataDirectory().path
+            )
+
+            val totalBytes =
+                stat.totalBytes
+
+            val availableBytes =
+                stat.availableBytes
+
+            val usedBytes =
+                totalBytes - availableBytes
+
+            val totalGB =
+                totalBytes / (1024.0 * 1024.0 * 1024.0)
+
+            val usedGB =
+                usedBytes / (1024.0 * 1024.0 * 1024.0)
+
+            val availableGB =
+                availableBytes / (1024.0 * 1024.0 * 1024.0)
+
+            """
+            INTERNAL STORAGE
+
+            Total: %.2f GB
+            Used: %.2f GB
+            Available: %.2f GB
+            """.trimIndent().format(
+                totalGB,
+                usedGB,
+                availableGB
+            )
+        }
+
+        "memory" -> {
+
+            val activityManager =
+                getSystemService(Context.ACTIVITY_SERVICE)
+                    as ActivityManager
+
+            val memoryInfo =
+                ActivityManager.MemoryInfo()
+
+            activityManager.getMemoryInfo(memoryInfo)
+
+            val totalRAM =
+                memoryInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
+
+            val availableRAM =
+                memoryInfo.availMem / (1024.0 * 1024.0 * 1024.0)
+
+            val usedRAM =
+                totalRAM - availableRAM
+
+            """
+            RAM INFORMATION
+
+            Total RAM: %.2f GB
+            Used RAM: %.2f GB
+            Available RAM: %.2f GB
+            Low Memory: ${memoryInfo.lowMemory}
+            """.trimIndent().format(
+                totalRAM,
+                usedRAM,
+                availableRAM
+            )
+        }
+
+        "uptime" -> {
+
+            val elapsed =
+                android.os.SystemClock.elapsedRealtime()
+
+            val seconds =
+                elapsed / 1000
+
+            val days = seconds / 86400
+            val hours = (seconds % 86400) / 3600
+            val minutes = (seconds % 3600) / 60
+            val remainingSeconds = seconds % 60
+
+            """
+            DEVICE UPTIME
+
+            $days days, $hours hours,
+            $minutes minutes, $remainingSeconds seconds
+            """.trimIndent()
+        }
+
+        else -> {
+            "Unknown command: $command\nType 'help' to see available commands."
+        }
+    }
+}
+
     private fun connectAdb(
         call: io.flutter.plugin.common.MethodCall,
         result: MethodChannel.Result
