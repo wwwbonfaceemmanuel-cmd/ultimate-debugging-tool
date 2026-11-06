@@ -307,7 +307,7 @@ if (packet == null) {
                 )
             }
 
-            return CommandResult(
+              return CommandResult(
                 output = stdout.toString(StandardCharsets.UTF_8.name()),
                 errorOutput = stderr.toString(StandardCharsets.UTF_8.name()),
                 exitCode = exitCode,
@@ -318,12 +318,52 @@ if (packet == null) {
 
             Thread.currentThread().interrupt()
 
+            closeFailedStream(localId, remoteId, streamClosed)
+
             throw IOException(
                 "ADB command execution was interrupted.",
                 error
             )
+
+        } catch (error: Exception) {
+
+            closeFailedStream(localId, remoteId, streamClosed)
+
+            throw if (error is IOException) {
+                error
+            } else {
+                IOException(
+                    "ADB command execution failed: ${error.message}",
+                    error
+                )
+            }
         }
     }
+
+    /**
+ * Closes an unfinished shell stream after command failure.
+ */
+private fun closeFailedStream(
+    localId: Int,
+    remoteId: Int?,
+    streamClosed: Boolean
+) {
+    if (remoteId == null || streamClosed) {
+        return
+    }
+
+    try {
+        sendPacket(
+            AdbProtocol.AdbPacket(
+                command = AdbProtocol.CMD_CLSE,
+                arg0 = localId,
+                arg1 = remoteId
+            )
+        )
+    } catch (_: Exception) {
+        // The connection may already be unavailable.
+    }
+}
 
     /**
      * Decodes shell_v2 channel frames.
