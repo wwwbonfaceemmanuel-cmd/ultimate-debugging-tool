@@ -77,13 +77,11 @@ class _CommandTerminalScreenState
 
   _addOutput('> $command');
 
-  if (_executionMode != 'STANDARD ANDROID') {
-    _addOutput(
-      'This execution mode is not connected yet.',
-    );
-    _addOutput('');
-    return;
-  }
+    final method = _executionMode == 'ADB MODE'
+      ? 'executeAdbCommand'
+      : _executionMode == 'ROOT MODE'
+          ? 'executeRootCommand'
+          : 'executeStandardDiagnostic';
 
   try {
     final output = await _terminalChannel.invokeMethod<String>(
