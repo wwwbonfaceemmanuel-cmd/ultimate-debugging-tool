@@ -583,6 +583,9 @@ fun createShellSession(): AdbShellSession {
             notifyStateChanged(State.CLOSED)
         }
 
+        shellSession?.close()
+        shellSession = null
+
         try {
             transport.close()
         } catch (_: Exception) {
