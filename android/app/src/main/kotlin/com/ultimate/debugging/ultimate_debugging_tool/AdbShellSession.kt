@@ -479,13 +479,16 @@ private fun closeFailedStream(
      * Prevents operations on a closed session.
      */
     private fun checkSessionOpen() {
-
-        if (closed.get()) {
-            throw IOException(
-                "ADB shell session is closed."
-            )
-        }
+    if (closed.get()) {
+        throw IOException(
+            "ADB shell session is closed."
+        )
     }
+
+    readerFailure?.let { failure ->
+        throw failure
+    }
+}1
 
     /**
      * Stops the shell reader.
