@@ -78,6 +78,9 @@ class AdbConnection(
     @Volatile
     private var cancelled = false
 
+    @Volatile
+    private var shellSession: AdbShellSession? = null
+
     private val connectionLock = Any()
 
     /**
