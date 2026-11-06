@@ -1121,6 +1121,7 @@ class MainActivity : FlutterActivity() {
 
         wirelessExecutor.shutdownNow()
         adbExecutor.shutdownNow()
+        terminalExecutor.shutdownNow()
 
         super.onDestroy()
     }
