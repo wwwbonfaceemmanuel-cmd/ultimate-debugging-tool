@@ -523,6 +523,37 @@ class AdbConnection(
     }
 
     /**
+ * Creates or returns the authenticated ADB shell session.
+ */
+fun createShellSession(): AdbShellSession {
+
+    synchronized(connectionLock) {
+
+        if (cancelled || state != State.CONNECTED) {
+            throw IOException(
+                "ADB must be connected and authenticated before opening a shell."
+            )
+        }
+
+        val existingSession = shellSession
+
+        if (existingSession != null) {
+            return existingSession
+        }
+
+        val session = AdbShellSession(
+            transport = transport,
+            maxDataSize = negotiatedMaxDataSize,
+            supportsShellV2 = deviceFeatures.contains("shell_v2")
+        )
+
+        shellSession = session
+
+        return session
+    }
+}
+
+    /**
      * Indicates whether the connection was cancelled.
      */
     fun isCancelled(): Boolean {
