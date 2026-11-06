@@ -98,11 +98,15 @@ class DashboardScreen extends StatelessWidget {
         ),
       ),
       ToolItem(
-        title: 'Command Terminal',
-        description: 'Command execution interface.',
-        icon: Icons.terminal,
-        color: Colors.purple,
-      ),
+  title: 'Command Terminal',
+  description: 'Advanced Android command terminal.',
+  icon: Icons.terminal,
+  color: Colors.purple,
+  onTap: () => _openScreen(
+    context,
+    const CommandTerminalScreen(),
+  ),
+),
       ToolItem(
         title: 'Repair Tools',
         description: 'Android troubleshooting and repair utilities.',
