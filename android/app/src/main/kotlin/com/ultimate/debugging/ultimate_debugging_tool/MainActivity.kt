@@ -1143,10 +1143,14 @@ if (
 
                 if (isFinalState && resultSent.compareAndSet(false, true)) {
                     mainHandler.post {
-                        if (info.state == AdbConnection.State.FAILED) {
+                        if (
+    info.state == AdbConnection.State.FAILED ||
+    info.state == AdbConnection.State.CLOSED ||
+    info.state == AdbConnection.State.DISCONNECTED
+) {
                             result.error(
                                 "WIRELESS_CONNECTION_FAILED",
-                                info.error ?: "Wireless ADB connection failed.",
+                                info.error ?: "Wireless ADB connection ended before it was established."
                                 null
                             )
                         } else {
