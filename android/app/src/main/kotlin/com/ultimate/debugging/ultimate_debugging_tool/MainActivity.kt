@@ -59,6 +59,8 @@ class MainActivity : FlutterActivity() {
 
     private val wirelessExecutor = Executors.newSingleThreadExecutor()
 
+    private val terminalExecutor = Executors.newSingleThreadExecutor()
+    
     @Volatile
     private var adbConnection: AdbConnection? = null
 
