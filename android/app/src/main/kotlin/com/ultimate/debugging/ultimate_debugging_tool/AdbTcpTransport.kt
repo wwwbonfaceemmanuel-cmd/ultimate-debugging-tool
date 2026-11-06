@@ -1,4 +1,3 @@
-
 package com.ultimate.debugging.ultimate_debugging_tool
 
 import java.io.EOFException
@@ -134,10 +133,6 @@ class AdbTcpTransport(
                 val headerBuffer = ByteBuffer.wrap(header)
                     .order(ByteOrder.LITTLE_ENDIAN)
 
-                // ADB packet header:
-                // command, arg0, arg1, dataLength,
-                // dataChecksum, magic.
-
                 headerBuffer.int
                 headerBuffer.int
                 headerBuffer.int
@@ -242,15 +237,12 @@ class AdbTcpTransport(
                         error
                     )
                 }
-
-                // Retry temporary read timeouts.
             }
         }
     }
 
     /**
-     * Returns the active socket or throws if the transport
-     * is disconnected or has been closed.
+     * Returns the active socket or throws if disconnected.
      */
     private fun requireOpenSocket(): Socket {
         synchronized(lifecycleLock) {
@@ -278,8 +270,7 @@ class AdbTcpTransport(
     }
 
     /**
-     * Closes a socket after a failed connection attempt,
-     * without accidentally closing a newer socket.
+     * Closes a socket after a failed connection attempt.
      */
     private fun closeSocketAfterFailure(
         failedSocket: Socket
@@ -303,7 +294,7 @@ class AdbTcpTransport(
      */
     private fun transportError(
         message: String,
-        cause: IOException
+        cause: Throwable
     ): IOException {
         return IOException(message, cause)
     }
