@@ -814,18 +814,33 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        if (
-            adbStatus == "CONNECTING" ||
-            adbStatus == "AUTHENTICATION_REQUIRED" ||
-            adbStatus == "CONNECTED"
-        ) {
-            result.error(
-                "ADB_BUSY",
-                "An ADB connection is already active.",
-                null
-            )
-            return
-        }
+        val wirelessConnectionState =
+    wirelessManager?.getConnectionInfo()?.state
+
+if (
+    adbStatus in setOf(
+        "CONNECTING",
+        "AUTHENTICATION_REQUIRED",
+        "CONNECTED"
+    ) ||
+    wirelessStatus in setOf(
+        "CONNECTING",
+        "AUTHENTICATION_REQUIRED",
+        "CONNECTED"
+    ) ||
+    wirelessConnectionState in setOf(
+        AdbConnection.State.CONNECTING,
+        AdbConnection.State.AUTHENTICATION_REQUIRED,
+        AdbConnection.State.CONNECTED
+    )
+) {
+    result.error(
+        "ADB_BUSY",
+        "USB ADB cannot connect while Wireless ADB is active or connecting. Disconnect Wireless ADB first.",
+        null
+    )
+    return
+}
 
         val device = usbManager.deviceList[deviceName]
 
