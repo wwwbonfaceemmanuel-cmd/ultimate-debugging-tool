@@ -52,6 +52,9 @@ class AdbShellSession(
     private val incomingPackets =
         LinkedBlockingQueue<AdbProtocol.AdbPacket>()
 
+    @Volatile
+    private var readerFailure: IOException? = null
+
     private val writeLock = Any()
     private val commandLock = Any()
 
