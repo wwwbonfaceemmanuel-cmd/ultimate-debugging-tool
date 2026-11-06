@@ -2,6 +2,10 @@
 package com.ultimate.debugging.ultimate_debugging_tool
 
 import android.app.PendingIntent
+import android.app.ActivityManager
+import android.os.BatteryManager
+import android.os.Environment
+import android.os.StatFs
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.ClipData
