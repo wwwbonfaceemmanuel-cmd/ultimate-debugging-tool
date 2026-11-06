@@ -203,15 +203,6 @@ class AdbConnection(
 
                             publicKeySent = true
 
-                            /*
-                             * IMPORTANT:
-                             * The public key has now been sent.
-                             * Android can display its USB debugging
-                             * authorization prompt at this point.
-                             *
-                             * Notify MainActivity immediately so it
-                             * can update the Flutter interface.
-                             */
                             updateState(
                                 State.AUTHENTICATION_REQUIRED
                             )
@@ -519,39 +510,73 @@ class AdbConnection(
      * Indicates whether the ADB connection is established.
      */
     fun isConnected(): Boolean {
-    return !cancelled && state == State.CONNECTED
+        return !cancelled && state == State.CONNECTED
     }
 
     /**
- * Creates or returns the authenticated ADB shell session.
- */
-fun createShellSession(): AdbShellSession {
+     * Creates or returns the authenticated ADB shell session.
+     */
+    fun createShellSession(): AdbShellSession {
 
-    synchronized(connectionLock) {
+        synchronized(connectionLock) {
 
-        if (cancelled || state != State.CONNECTED) {
-            throw IOException(
-                "ADB must be connected and authenticated before opening a shell."
+            if (cancelled || state != State.CONNECTED) {
+                throw IOException(
+                    "ADB must be connected and authenticated before opening a shell."
+                )
+            }
+
+            val existingSession = shellSession
+
+            if (existingSession != null) {
+                return existingSession
+            }
+
+            val session = AdbShellSession(
+                transport = transport,
+                maxDataSize = negotiatedMaxDataSize,
+                supportsShellV2 = deviceFeatures.contains("shell_v2"),
+                onSessionFailed = { error ->
+                    handleShellSessionFailure(error)
+                }
             )
+
+            shellSession = session
+
+            return session
         }
-
-        val existingSession = shellSession
-
-        if (existingSession != null) {
-            return existingSession
-        }
-
-        val session = AdbShellSession(
-            transport = transport,
-            maxDataSize = negotiatedMaxDataSize,
-            supportsShellV2 = deviceFeatures.contains("shell_v2")
-        )
-
-        shellSession = session
-
-        return session
     }
-}
+
+    /**
+     * Invalidates the owning connection when its shell session fails.
+     */
+    private fun handleShellSessionFailure(error: IOException) {
+
+        val shouldClose = synchronized(connectionLock) {
+
+            if (cancelled || state == State.CLOSED) {
+                false
+            } else {
+                cancelled = true
+                state = State.FAILED
+                true
+            }
+        }
+
+        if (!shouldClose) {
+            return
+        }
+
+        notifyStateChanged(State.FAILED)
+
+        shellSession?.close()
+
+        try {
+            transport.close()
+        } catch (_: Exception) {
+            // Continue with the failed connection state.
+        }
+    }
 
     /**
      * Indicates whether the connection was cancelled.
@@ -561,10 +586,7 @@ fun createShellSession(): AdbShellSession {
     }
 
     /**
-     * Cancels the connection and releases USB resources.
-     *
-     * This method deliberately does not wait for the
-     * connection negotiation lock.
+     * Cancels the connection and releases USB or TCP resources.
      */
     fun close() {
 
