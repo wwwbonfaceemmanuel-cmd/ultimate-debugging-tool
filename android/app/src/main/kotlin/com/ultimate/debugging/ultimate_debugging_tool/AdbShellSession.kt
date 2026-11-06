@@ -188,12 +188,27 @@ class AdbShellSession(
                     )
                 }
 
-                val packet = incomingPackets.poll(
-                    remainingNanos,
-                    TimeUnit.NANOSECONDS
-                ) ?: throw IOException(
-                    "ADB command timed out after ${timeoutMs} ms."
-                )
+                readerFailure?.let { failure ->
+    throw failure
+}
+
+val waitNanos = minOf(
+    remainingNanos,
+    TimeUnit.MILLISECONDS.toNanos(200)
+)
+
+val packet = incomingPackets.poll(
+    waitNanos,
+    TimeUnit.NANOSECONDS
+)
+
+if (packet == null) {
+    readerFailure?.let { failure ->
+        throw failure
+    }
+
+    continue
+}
 
                 when (packet.command) {
 
