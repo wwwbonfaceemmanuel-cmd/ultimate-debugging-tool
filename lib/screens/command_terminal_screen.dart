@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class CommandTerminalScreen extends StatefulWidget {
   const CommandTerminalScreen({super.key});
