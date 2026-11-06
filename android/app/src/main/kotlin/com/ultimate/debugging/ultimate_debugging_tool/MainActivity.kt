@@ -1150,7 +1150,7 @@ if (
 ) {
                             result.error(
                                 "WIRELESS_CONNECTION_FAILED",
-                                info.error ?: "Wireless ADB connection ended before it was established."
+                                info.error ?: "Wireless ADB connection ended before it was established.",
                                 null
                             )
                         } else {
