@@ -25,6 +25,7 @@ import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileInputStream
@@ -32,6 +33,8 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class MainActivity : FlutterActivity() {
 
@@ -57,11 +60,17 @@ class MainActivity : FlutterActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private val adbExecutor = Executors.newSingleThreadExecutor()
-
     private val wirelessExecutor = Executors.newSingleThreadExecutor()
-
     private val terminalExecutor = Executors.newSingleThreadExecutor()
-    
+
+    private val adbLifecycleLock = Any()
+
+    private val pendingWirelessResult =
+        AtomicReference<MethodChannel.Result?>(null)
+
+    private val pendingWirelessResultSent =
+        AtomicReference<AtomicBoolean?>(null)
+
     @Volatile
     private var adbConnection: AdbConnection? = null
 
@@ -89,12 +98,17 @@ class MainActivity : FlutterActivity() {
     @Volatile
     private var eventSink: EventChannel.EventSink? = null
 
+    @Volatile
+    private var activityDestroyed = false
+
     private var receiverRegistered = false
 
     private val usbReceiver = object : BroadcastReceiver() {
 
-        override fun onReceive(context: Context, intent: Intent) {
-
+        override fun onReceive(
+            context: Context,
+            intent: Intent
+        ) {
             when (intent.action) {
 
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
@@ -161,30 +175,31 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
 
                 "executeStandardDiagnostic" -> {
-    val command = call.argument<String>("command")
 
-    if (command.isNullOrBlank()) {
-        result.error(
-            "INVALID_COMMAND",
-            "A command is required",
-            null
-        )
-    } else {
-        try {
-            result.success(
-                executeStandardDiagnostic(command)
-            )
-        } catch (e: Exception) {
-            result.error(
-                "DIAGNOSTIC_ERROR",
-                e.message ?: "Diagnostic command failed",
-                null
-            )
-        }
-    }
-}
+                    val command = call.argument<String>("command")
 
-             "executeAdbCommand" -> {
+                    if (command.isNullOrBlank()) {
+                        result.error(
+                            "INVALID_COMMAND",
+                            "A command is required.",
+                            null
+                        )
+                    } else {
+                        try {
+                            result.success(
+                                executeStandardDiagnostic(command)
+                            )
+                        } catch (e: Exception) {
+                            result.error(
+                                "DIAGNOSTIC_ERROR",
+                                e.message ?: "Diagnostic command failed.",
+                                null
+                            )
+                        }
+                    }
+                }
+
+                "executeAdbCommand" -> {
                     executeTerminalCommand(
                         call,
                         result,
@@ -208,7 +223,7 @@ class MainActivity : FlutterActivity() {
 
                         result.error(
                             "USB_ERROR",
-                            e.message ?: "Unable to retrieve USB devices",
+                            e.message ?: "Unable to retrieve USB devices.",
                             null
                         )
                     }
@@ -222,7 +237,7 @@ class MainActivity : FlutterActivity() {
 
                         result.error(
                             "ADB_INTERFACE_ERROR",
-                            e.message ?: "Unable to inspect ADB interfaces",
+                            e.message ?: "Unable to inspect ADB interfaces.",
                             null
                         )
                     }
@@ -236,7 +251,7 @@ class MainActivity : FlutterActivity() {
                     if (deviceName.isNullOrBlank()) {
                         result.error(
                             "INVALID_DEVICE",
-                            "USB device name is required",
+                            "USB device name is required.",
                             null
                         )
                         return@setMethodCallHandler
@@ -247,7 +262,7 @@ class MainActivity : FlutterActivity() {
                     if (device == null) {
                         result.error(
                             "DEVICE_NOT_FOUND",
-                            "USB device is no longer connected",
+                            "USB device is no longer connected.",
                             null
                         )
                         return@setMethodCallHandler
@@ -261,7 +276,7 @@ class MainActivity : FlutterActivity() {
 
                         result.error(
                             "PERMISSION_ERROR",
-                            e.message ?: "USB permission request failed",
+                            e.message ?: "USB permission request failed.",
                             null
                         )
                     }
@@ -315,35 +330,38 @@ class MainActivity : FlutterActivity() {
 
                     exportApplicationApk(packageName, result)
                 }
-                
 
                 "shareApplicationApkBackup" -> {
 
-    val backupDirectory =
-        call.argument<String>("backupDirectory")
+                    val backupDirectory =
+                        call.argument<String>("backupDirectory")
 
-    val files =
-        call.argument<List<*>>("files")
+                    val files =
+                        call.argument<List<*>>("files")
 
-    if (backupDirectory.isNullOrBlank() || files.isNullOrEmpty()) {
-        result.error(
-            "INVALID_BACKUP",
-            "A backup directory and verified APK file list are required.",
-            null
-        )
-        return@setMethodCallHandler
-    }
+                    if (
+                        backupDirectory.isNullOrBlank() ||
+                        files.isNullOrEmpty()
+                    ) {
+                        result.error(
+                            "INVALID_BACKUP",
+                            "A backup directory and verified APK file list are required.",
+                            null
+                        )
+                        return@setMethodCallHandler
+                    }
 
-    shareApplicationApkBackup(
-        backupDirectory,
-        files,
-        result
-    )
-}
+                    shareApplicationApkBackup(
+                        backupDirectory,
+                        files,
+                        result
+                    )
+                }
 
                 "getInstalledApplications" -> {
                     try {
                         val inventory = ApplicationInventory(this)
+
                         result.success(
                             inventory.getInstalledApplications()
                         )
@@ -357,7 +375,7 @@ class MainActivity : FlutterActivity() {
                         result.error(
                             "APP_INVENTORY_ERROR",
                             e.message
-                                ?: "Unable to retrieve installed applications",
+                                ?: "Unable to retrieve installed applications.",
                             null
                         )
                     }
@@ -391,7 +409,7 @@ class MainActivity : FlutterActivity() {
                         result.error(
                             "APP_PERMISSION_ERROR",
                             e.message
-                                ?: "Unable to retrieve application permissions",
+                                ?: "Unable to retrieve application permissions.",
                             null
                         )
                     }
@@ -435,200 +453,193 @@ class MainActivity : FlutterActivity() {
         )
     }
 
-    private fun executeStandardDiagnostic(command: String): String {
+    private fun executeStandardDiagnostic(
+        command: String
+    ): String {
 
-    return when (command.trim().lowercase()) {
+        return when (command.trim().lowercase()) {
 
-        "help" -> {
-            """
-            ULTIMATE DEBUGGING TOOL
-            Standard Android Commands
-
-            help         - Show available commands
-            device-info  - Show device information
-            battery      - Show battery information
-            storage      - Show internal storage information
-            memory       - Show RAM information
-            uptime       - Show device uptime
-            """.trimIndent()
-        }
-
-        "device-info" -> {
-            """
-            DEVICE INFORMATION
-
-            Manufacturer: ${Build.MANUFACTURER}
-            Brand: ${Build.BRAND}
-            Model: ${Build.MODEL}
-            Device: ${Build.DEVICE}
-            Android Version: ${Build.VERSION.RELEASE}
-            SDK Version: ${Build.VERSION.SDK_INT}
-            Hardware: ${Build.HARDWARE}
-            """.trimIndent()
-        }
-
-        "battery" -> {
-
-            val batteryIntent = registerReceiver(
-                null,
-                android.content.IntentFilter(
-                    Intent.ACTION_BATTERY_CHANGED
-                )
-            )
-
-            if (batteryIntent == null) {
-                "Unable to retrieve battery information."
-            } else {
-
-                val level = batteryIntent.getIntExtra(
-                    BatteryManager.EXTRA_LEVEL,
-                    -1
-                )
-
-                val scale = batteryIntent.getIntExtra(
-                    BatteryManager.EXTRA_SCALE,
-                    -1
-                )
-
-                val percentage =
-                    if (level >= 0 && scale > 0) {
-                        (level * 100) / scale
-                    } else {
-                        -1
-                    }
-
-                val status = batteryIntent.getIntExtra(
-                    BatteryManager.EXTRA_STATUS,
-                    -1
-                )
-
-                val charging = when (status) {
-                    BatteryManager.BATTERY_STATUS_CHARGING ->
-                        "Charging"
-
-                    BatteryManager.BATTERY_STATUS_FULL ->
-                        "Full"
-
-                    BatteryManager.BATTERY_STATUS_DISCHARGING ->
-                        "Discharging"
-
-                    BatteryManager.BATTERY_STATUS_NOT_CHARGING ->
-                        "Not charging"
-
-                    else -> "Unknown"
-                }
-
+            "help" -> {
                 """
-                BATTERY INFORMATION
+                ULTIMATE DEBUGGING TOOL
+                Standard Android Commands
 
-                Battery Level: ${
-                    if (percentage >= 0) "$percentage%" else "Unknown"
-                }
-                Status: $charging
+                help         - Show available commands
+                device-info  - Show device information
+                battery      - Show battery information
+                storage      - Show internal storage information
+                memory       - Show RAM information
+                uptime       - Show device uptime
                 """.trimIndent()
             }
-        }
 
-        "storage" -> {
+            "device-info" -> {
+                """
+                DEVICE INFORMATION
 
-            val stat = StatFs(
-                Environment.getDataDirectory().path
-            )
+                Manufacturer: ${Build.MANUFACTURER}
+                Brand: ${Build.BRAND}
+                Model: ${Build.MODEL}
+                Device: ${Build.DEVICE}
+                Android Version: ${Build.VERSION.RELEASE}
+                SDK Version: ${Build.VERSION.SDK_INT}
+                Hardware: ${Build.HARDWARE}
+                """.trimIndent()
+            }
 
-            val totalBytes =
-                stat.totalBytes
+            "battery" -> {
 
-            val availableBytes =
-                stat.availableBytes
+                val batteryIntent = registerReceiver(
+                    null,
+                    IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+                )
 
-            val usedBytes =
-                totalBytes - availableBytes
+                if (batteryIntent == null) {
+                    "Unable to retrieve battery information."
+                } else {
 
-            val totalGB =
-                totalBytes / (1024.0 * 1024.0 * 1024.0)
+                    val level = batteryIntent.getIntExtra(
+                        BatteryManager.EXTRA_LEVEL,
+                        -1
+                    )
 
-            val usedGB =
-                usedBytes / (1024.0 * 1024.0 * 1024.0)
+                    val scale = batteryIntent.getIntExtra(
+                        BatteryManager.EXTRA_SCALE,
+                        -1
+                    )
 
-            val availableGB =
-                availableBytes / (1024.0 * 1024.0 * 1024.0)
+                    val percentage =
+                        if (level >= 0 && scale > 0) {
+                            (level * 100) / scale
+                        } else {
+                            -1
+                        }
 
-            """
-            INTERNAL STORAGE
+                    val status = batteryIntent.getIntExtra(
+                        BatteryManager.EXTRA_STATUS,
+                        -1
+                    )
 
-            Total: %.2f GB
-            Used: %.2f GB
-            Available: %.2f GB
-            """.trimIndent().format(
-                totalGB,
-                usedGB,
-                availableGB
-            )
-        }
+                    val charging = when (status) {
+                        BatteryManager.BATTERY_STATUS_CHARGING ->
+                            "Charging"
 
-        "memory" -> {
+                        BatteryManager.BATTERY_STATUS_FULL ->
+                            "Full"
 
-            val activityManager =
-                getSystemService(Context.ACTIVITY_SERVICE)
-                    as ActivityManager
+                        BatteryManager.BATTERY_STATUS_DISCHARGING ->
+                            "Discharging"
 
-            val memoryInfo =
-                ActivityManager.MemoryInfo()
+                        BatteryManager.BATTERY_STATUS_NOT_CHARGING ->
+                            "Not charging"
 
-            activityManager.getMemoryInfo(memoryInfo)
+                        else -> "Unknown"
+                    }
 
-            val totalRAM =
-                memoryInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
+                    """
+                    BATTERY INFORMATION
 
-            val availableRAM =
-                memoryInfo.availMem / (1024.0 * 1024.0 * 1024.0)
+                    Battery Level: ${
+                        if (percentage >= 0) "$percentage%" else "Unknown"
+                    }
+                    Status: $charging
+                    """.trimIndent()
+                }
+            }
 
-            val usedRAM =
-                totalRAM - availableRAM
+            "storage" -> {
 
-            """
-            RAM INFORMATION
+                val stat = StatFs(
+                    Environment.getDataDirectory().path
+                )
 
-            Total RAM: %.2f GB
-            Used RAM: %.2f GB
-            Available RAM: %.2f GB
-            Low Memory: ${memoryInfo.lowMemory}
-            """.trimIndent().format(
-                totalRAM,
-                usedRAM,
-                availableRAM
-            )
-        }
+                val totalBytes = stat.totalBytes
+                val availableBytes = stat.availableBytes
+                val usedBytes = totalBytes - availableBytes
 
-        "uptime" -> {
+                val totalGB =
+                    totalBytes / (1024.0 * 1024.0 * 1024.0)
 
-            val elapsed =
-                android.os.SystemClock.elapsedRealtime()
+                val usedGB =
+                    usedBytes / (1024.0 * 1024.0 * 1024.0)
 
-            val seconds =
-                elapsed / 1000
+                val availableGB =
+                    availableBytes / (1024.0 * 1024.0 * 1024.0)
 
-            val days = seconds / 86400
-            val hours = (seconds % 86400) / 3600
-            val minutes = (seconds % 3600) / 60
-            val remainingSeconds = seconds % 60
+                """
+                INTERNAL STORAGE
 
-            """
-            DEVICE UPTIME
+                Total: %.2f GB
+                Used: %.2f GB
+                Available: %.2f GB
+                """.trimIndent().format(
+                    totalGB,
+                    usedGB,
+                    availableGB
+                )
+            }
 
-            $days days, $hours hours,
-            $minutes minutes, $remainingSeconds seconds
-            """.trimIndent()
-        }
+            "memory" -> {
 
-        else -> {
-            "Unknown command: $command\nType 'help' to see available commands."
+                val activityManager =
+                    getSystemService(Context.ACTIVITY_SERVICE)
+                        as ActivityManager
+
+                val memoryInfo =
+                    ActivityManager.MemoryInfo()
+
+                activityManager.getMemoryInfo(memoryInfo)
+
+                val totalRAM =
+                    memoryInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
+
+                val availableRAM =
+                    memoryInfo.availMem / (1024.0 * 1024.0 * 1024.0)
+
+                val usedRAM = totalRAM - availableRAM
+
+                """
+                RAM INFORMATION
+
+                Total RAM: %.2f GB
+                Used RAM: %.2f GB
+                Available RAM: %.2f GB
+                Low Memory: ${memoryInfo.lowMemory}
+                """.trimIndent().format(
+                    totalRAM,
+                    usedRAM,
+                    availableRAM
+                )
+            }
+
+            "uptime" -> {
+
+                val elapsed =
+                    android.os.SystemClock.elapsedRealtime()
+
+                val seconds = elapsed / 1000
+
+                val days = seconds / 86400
+                val hours = (seconds % 86400) / 3600
+                val minutes = (seconds % 3600) / 60
+                val remainingSeconds = seconds % 60
+
+                """
+                DEVICE UPTIME
+
+                $days days, $hours hours,
+                $minutes minutes, $remainingSeconds seconds
+                """.trimIndent()
+            }
+
+            else -> {
+                "Unknown command: $command\nType 'help' to see available commands."
+            }
         }
     }
-}
 
-        private fun executeTerminalCommand(
-        call: io.flutter.plugin.common.MethodCall,
+    private fun executeTerminalCommand(
+        call: MethodCall,
         result: MethodChannel.Result,
         requireRoot: Boolean
     ) {
@@ -688,117 +699,125 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        terminalExecutor.execute {
-            try {
-                val usbConnected =
-                    adbConnection?.isConnected() == true
+        try {
+            terminalExecutor.execute {
 
-              val wirelessConnected =
-                  wirelessStatus == "CONNECTED" &&
-                   wirelessManager?.getConnectionInfo()?.state ==
-                   AdbConnection.State.CONNECTED
+                try {
+                    val usbConnected =
+                        adbConnection?.isConnected() == true
 
-                if (usbConnected && wirelessConnected) {
-                    throw IOException(
-                        "Both USB and Wireless ADB are connected. Disconnect one connection first."
-                    )
-                }
+                    val wirelessConnected =
+                        wirelessStatus == "CONNECTED" &&
+                            wirelessManager?.getConnectionInfo()?.state ==
+                            AdbConnection.State.CONNECTED
 
-                if (!usbConnected && !wirelessConnected) {
-                    throw IOException(
-                        "No authenticated ADB connection. Connect a device using USB or Wireless ADB first."
-                    )
-                }
-
-                fun executeAdbShell(
-                    shellCommand: String
-                ): AdbShellSession.CommandResult {
-                    return if (usbConnected) {
-                        adbConnection!!
-                            .createShellSession()
-                            .execute(shellCommand, 30000L)
-                    } else {
-                        wirelessManager!!
-                            .executeCommand(shellCommand, 30000L)
-                    }
-                }
-
-                fun shellQuote(value: String): String {
-                    return "'" + value.replace(
-                        "'",
-                        "'\\''"
-                    ) + "'"
-                }
-
-                if (requireRoot) {
-                    val rootCheck = executeAdbShell(
-                        "su -c ${shellQuote("id")}"
-                    )
-
-                    if (
-                        rootCheck.exitCode != 0 ||
-                        !rootCheck.output.contains("uid=0")
-                    ) {
+                    if (usbConnected && wirelessConnected) {
                         throw IOException(
-                            "Root access was not granted. This device may not be rooted, or the root permission request was denied."
+                            "Both USB and Wireless ADB are connected. Disconnect one connection first."
+                        )
+                    }
+
+                    if (!usbConnected && !wirelessConnected) {
+                        throw IOException(
+                            "No authenticated ADB connection. Connect a device using USB or Wireless ADB first."
+                        )
+                    }
+
+                    fun executeAdbShell(
+                        shellCommand: String
+                    ): AdbShellSession.CommandResult {
+                        return if (usbConnected) {
+                            adbConnection!!
+                                .createShellSession()
+                                .execute(shellCommand, 30000L)
+                        } else {
+                            wirelessManager!!
+                                .executeCommand(shellCommand, 30000L)
+                        }
+                    }
+
+                    fun shellQuote(value: String): String {
+                        return "'" + value.replace(
+                            "'",
+                            "'\\''"
+                        ) + "'"
+                    }
+
+                    if (requireRoot) {
+                        val rootCheck = executeAdbShell(
+                            "su -c ${shellQuote("id")}"
+                        )
+
+                        if (
+                            rootCheck.exitCode != 0 ||
+                            !rootCheck.output.contains("uid=0")
+                        ) {
+                            throw IOException(
+                                "Root access was not granted. This device may not be rooted, or the root permission request was denied."
+                            )
+                        }
+                    }
+
+                    val shellCommand = if (requireRoot) {
+                        "su -c ${shellQuote(command)}"
+                    } else {
+                        command
+                    }
+
+                    val commandResult =
+                        executeAdbShell(shellCommand)
+
+                    val output = buildString {
+                        append(commandResult.output)
+
+                        if (commandResult.errorOutput.isNotBlank()) {
+                            if (isNotEmpty()) append("\n")
+                            append("ERROR:\n")
+                            append(commandResult.errorOutput)
+                        }
+
+                        if (commandResult.exitCode != null) {
+                            if (isNotEmpty()) append("\n\n")
+                            append("Exit code: ")
+                            append(commandResult.exitCode)
+                        }
+                    }.ifBlank {
+                        "Command completed without output."
+                    }
+
+                    mainHandler.post {
+                        result.success(output)
+                    }
+
+                } catch (e: Exception) {
+                    Log.e(
+                        TAG,
+                        "Terminal command execution failed",
+                        e
+                    )
+
+                    mainHandler.post {
+                        result.error(
+                            "TERMINAL_EXECUTION_ERROR",
+                            e.message ?: "Terminal command failed.",
+                            null
                         )
                     }
                 }
-
-                val shellCommand = if (requireRoot) {
-                    "su -c ${shellQuote(command)}"
-                } else {
-                    command
-                }
-
-                val commandResult =
-                    executeAdbShell(shellCommand)
-
-                val output = buildString {
-                    append(commandResult.output)
-
-                    if (commandResult.errorOutput.isNotBlank()) {
-                        if (isNotEmpty()) append("\n")
-                        append("ERROR:\n")
-                        append(commandResult.errorOutput)
-                    }
-
-                    if (commandResult.exitCode != null) {
-                        if (isNotEmpty()) append("\n\n")
-                        append("Exit code: ")
-                        append(commandResult.exitCode)
-                    }
-                }.ifBlank {
-                    "Command completed without output."
-                }
-
-                mainHandler.post {
-                    result.success(output)
-                }
-
-            } catch (e: Exception) {
-                Log.e(
-                    TAG,
-                    "Terminal command execution failed",
-                    e
-                )
-
-                mainHandler.post {
-                    result.error(
-                        "TERMINAL_EXECUTION_ERROR",
-                        e.message ?: "Terminal command failed.",
-                        null
-                    )
-                }
             }
+        } catch (e: Exception) {
+            result.error(
+                "TERMINAL_EXECUTION_ERROR",
+                e.message ?: "Unable to schedule terminal command.",
+                null
+            )
         }
     }
 
     private fun connectAdb(
-        call: io.flutter.plugin.common.MethodCall,
+        call: MethodCall,
         result: MethodChannel.Result
     ) {
-
         val deviceName =
             call.argument<String>("deviceName")
 
@@ -814,268 +833,304 @@ class MainActivity : FlutterActivity() {
             return
         }
 
-        val wirelessConnectionState =
-    wirelessManager?.getConnectionInfo()?.state
+        synchronized(adbLifecycleLock) {
 
-if (
-    adbStatus in setOf(
-        "CONNECTING",
-        "AUTHENTICATION_REQUIRED",
-        "CONNECTED"
-    ) ||
-    wirelessStatus in setOf(
-        "CONNECTING",
-        "AUTHENTICATION_REQUIRED",
-        "CONNECTED"
-    ) ||
-    wirelessConnectionState in setOf(
-        AdbConnection.State.CONNECTING,
-        AdbConnection.State.AUTHENTICATION_REQUIRED,
-        AdbConnection.State.CONNECTED
-    )
-) {
-    result.error(
-        "ADB_BUSY",
-        "USB ADB cannot connect while Wireless ADB is active or connecting. Disconnect Wireless ADB first.",
-        null
-    )
-    return
-}
+            val wirelessConnectionState =
+                wirelessManager?.getConnectionInfo()?.state
 
-        val device = usbManager.deviceList[deviceName]
+            if (
+                adbStatus in setOf(
+                    "CONNECTING",
+                    "AUTHENTICATION_REQUIRED",
+                    "CONNECTED"
+                ) ||
+                wirelessStatus in setOf(
+                    "CONNECTING",
+                    "AUTHENTICATION_REQUIRED",
+                    "CONNECTED"
+                ) ||
+                wirelessConnectionState in setOf(
+                    AdbConnection.State.CONNECTING,
+                    AdbConnection.State.AUTHENTICATION_REQUIRED,
+                    AdbConnection.State.CONNECTED
+                )
+            ) {
+                result.error(
+                    "ADB_BUSY",
+                    "USB ADB cannot connect while Wireless ADB is active or connecting. Disconnect Wireless ADB first.",
+                    null
+                )
+                return
+            }
 
-        if (device == null) {
-            result.error(
-                "DEVICE_NOT_FOUND",
-                "The selected USB device is no longer connected.",
-                null
-            )
-            return
+            val device = usbManager.deviceList[deviceName]
+
+            if (device == null) {
+                result.error(
+                    "DEVICE_NOT_FOUND",
+                    "The selected USB device is no longer connected.",
+                    null
+                )
+                return
+            }
+
+            if (!usbManager.hasPermission(device)) {
+                result.error(
+                    "USB_PERMISSION_REQUIRED",
+                    "Grant USB permission before connecting to ADB.",
+                    null
+                )
+                return
+            }
+
+            val adbInterfaceExists =
+                (0 until device.interfaceCount)
+                    .map { device.getInterface(it) }
+                    .any {
+                        it.id == interfaceId &&
+                            it.interfaceClass == ADB_CLASS &&
+                            it.interfaceSubclass == ADB_SUBCLASS &&
+                            it.interfaceProtocol == ADB_PROTOCOL
+                    }
+
+            if (!adbInterfaceExists) {
+                result.error(
+                    "ADB_INTERFACE_NOT_FOUND",
+                    "The selected ADB interface was not found.",
+                    null
+                )
+                return
+            }
+
+            adbStatus = "CONNECTING"
+            adbDeviceName = device.deviceName
         }
-
-        if (!usbManager.hasPermission(device)) {
-            result.error(
-                "USB_PERMISSION_REQUIRED",
-                "Grant USB permission before connecting to ADB.",
-                null
-            )
-            return
-        }
-
-        val adbInterfaceExists =
-            (0 until device.interfaceCount)
-                .map { device.getInterface(it) }
-                .any {
-                    it.id == interfaceId &&
-                        it.interfaceClass == ADB_CLASS &&
-                        it.interfaceSubclass == ADB_SUBCLASS &&
-                        it.interfaceProtocol == ADB_PROTOCOL
-                }
-
-        if (!adbInterfaceExists) {
-            result.error(
-                "ADB_INTERFACE_NOT_FOUND",
-                "The selected ADB interface was not found.",
-                null
-            )
-            return
-        }
-
-        adbStatus = "CONNECTING"
-        adbDeviceName = device.deviceName
 
         sendAdbEvent("connecting")
 
-        adbExecutor.execute {
+        try {
+            adbExecutor.execute {
 
-            var transport: AdbUsbTransport? = null
-            var connection: AdbConnection? = null
+                var transport: AdbUsbTransport? = null
+                var connection: AdbConnection? = null
 
-            try {
-
-                transport = AdbUsbTransport(
-                    usbManager,
-                    device,
-                    interfaceId
-                )
-
-                lateinit var createdConnection: AdbConnection
-
-                createdConnection = AdbConnection(transport) { newState ->
-
-                    if (adbConnection === createdConnection) {
-
-                        adbStatus = newState.name
-
-                        val event = when (newState) {
-                            AdbConnection.State.CONNECTING ->
-                                "connecting"
-
-                            AdbConnection.State.AUTHENTICATION_REQUIRED ->
-                                "authentication_required"
-
-                            AdbConnection.State.CONNECTED ->
-                                "connected"
-
-                            AdbConnection.State.FAILED ->
-                                "failed"
-
-                            AdbConnection.State.CLOSED ->
-                                "disconnected"
-
-                            AdbConnection.State.DISCONNECTED ->
-                                "disconnected"
-                        }
-
-                        sendAdbEvent(event)
-                    }
-                }
-
-                connection = createdConnection
-
-                adbTransport = transport
-                adbConnection = createdConnection
-
-                transport.open()
-
-                val authentication = AdbAuthentication()
-
-                val handshake =
-                    createdConnection.connect(authentication)
-
-                if (adbConnection !== createdConnection) {
-                    throw AdbConnectionCancelledException(
-                        "ADB connection was replaced or cancelled."
+                try {
+                    transport = AdbUsbTransport(
+                        usbManager,
+                        usbManager.deviceList[deviceName]
+                            ?: throw IOException(
+                                "The USB device was disconnected."
+                            ),
+                        interfaceId
                     )
-                }
 
-                when (handshake) {
+                    lateinit var createdConnection: AdbConnection
 
-                    is AdbConnection.HandshakeResult.Connected -> {
-
-                        adbStatus = "CONNECTED"
-
-                        mainHandler.post {
-                            result.success(
-                                mapOf(
-                                    "status" to "CONNECTED",
-                                    "version" to handshake.version,
-                                    "maxDataSize" to handshake.maxDataSize,
-                                    "deviceBanner" to handshake.deviceBanner,
-                                    "features" to handshake.features,
-                                    "keyFingerprint" to
-                                        authentication.getPublicKeyFingerprint()
-                                )
-                            )
-                        }
-                    }
-
-                    is AdbConnection.HandshakeResult.AuthenticationRequired -> {
-
-                        adbStatus = "AUTHENTICATION_REQUIRED"
-
-                        mainHandler.post {
-                            result.success(
-                                mapOf(
-                                    "status" to "AUTHENTICATION_REQUIRED",
-                                    "message" to
-                                        "The device requires ADB authentication."
-                                )
-                            )
-                        }
-                    }
-
-                    is AdbConnection.HandshakeResult.Rejected -> {
+                    createdConnection = AdbConnection(transport) { newState ->
 
                         if (adbConnection === createdConnection) {
+                            adbStatus = newState.name
+
+                            val event = when (newState) {
+                                AdbConnection.State.CONNECTING ->
+                                    "connecting"
+
+                                AdbConnection.State.AUTHENTICATION_REQUIRED ->
+                                    "authentication_required"
+
+                                AdbConnection.State.CONNECTED ->
+                                    "connected"
+
+                                AdbConnection.State.FAILED ->
+                                    "failed"
+
+                                AdbConnection.State.CLOSED ->
+                                    "disconnected"
+
+                                AdbConnection.State.DISCONNECTED ->
+                                    "disconnected"
+                            }
+
+                            sendAdbEvent(event)
+                        }
+                    }
+
+                    connection = createdConnection
+
+                    synchronized(adbLifecycleLock) {
+                        if (adbStatus != "CONNECTING") {
+                            throw AdbConnectionCancelledException(
+                                "USB ADB connection was cancelled."
+                            )
+                        }
+
+                        adbTransport = transport
+                        adbConnection = createdConnection
+                    }
+
+                    transport.open()
+
+                    val authentication = AdbAuthentication()
+
+                    val handshake =
+                        createdConnection.connect(authentication)
+
+                    if (adbConnection !== createdConnection) {
+                        throw AdbConnectionCancelledException(
+                            "ADB connection was replaced or cancelled."
+                        )
+                    }
+
+                    when (handshake) {
+
+                        is AdbConnection.HandshakeResult.Connected -> {
+
+                            adbStatus = "CONNECTED"
+
+                            mainHandler.post {
+                                result.success(
+                                    mapOf(
+                                        "status" to "CONNECTED",
+                                        "version" to handshake.version,
+                                        "maxDataSize" to handshake.maxDataSize,
+                                        "deviceBanner" to handshake.deviceBanner,
+                                        "features" to handshake.features,
+                                        "keyFingerprint" to
+                                            authentication.getPublicKeyFingerprint()
+                                    )
+                                )
+                            }
+                        }
+
+                        is AdbConnection.HandshakeResult.AuthenticationRequired -> {
+
+                            adbStatus = "AUTHENTICATION_REQUIRED"
+
+                            mainHandler.post {
+                                result.success(
+                                    mapOf(
+                                        "status" to "AUTHENTICATION_REQUIRED",
+                                        "message" to
+                                            "The device requires ADB authentication."
+                                    )
+                                )
+                            }
+                        }
+
+                        is AdbConnection.HandshakeResult.Rejected -> {
+
+                            if (adbConnection === createdConnection) {
+                                adbConnection = null
+                                adbTransport = null
+                                adbDeviceName = null
+                                adbStatus = "FAILED"
+                            }
+
+                            createdConnection.close()
+
+                            mainHandler.post {
+                                sendAdbEvent("failed")
+
+                                result.error(
+                                    "ADB_REJECTED",
+                                    handshake.reason,
+                                    null
+                                )
+                            }
+                        }
+                    }
+
+                } catch (e: Exception) {
+
+                    val wasCancelled =
+                        e is AdbConnectionCancelledException ||
+                            connection?.isCancelled() == true ||
+                            (
+                                connection != null &&
+                                    adbConnection !== connection
+                            )
+
+                    if (wasCancelled) {
+                        Log.i(TAG, "ADB connection was cancelled.")
+
+                        if (adbConnection === connection) {
+                            adbConnection = null
+                            adbTransport = null
+                            adbDeviceName = null
+                            adbStatus = "DISCONNECTED"
+                        }
+
+                        try {
+                            connection?.close()
+                        } catch (_: Exception) {
+                            // Continue cancellation reporting.
+                        }
+
+                        mainHandler.post {
+                            result.error(
+                                "ADB_CANCELLED",
+                                "ADB connection was cancelled.",
+                                null
+                            )
+                        }
+
+                    } else {
+                        Log.e(TAG, "ADB connection failed", e)
+
+                        if (adbConnection === connection) {
                             adbConnection = null
                             adbTransport = null
                             adbDeviceName = null
                             adbStatus = "FAILED"
                         }
 
-                        createdConnection.close()
+                        try {
+                            connection?.close()
+                            if (connection == null) {
+                                transport?.close()
+                            }
+                        } catch (_: Exception) {
+                            // Continue failure reporting.
+                        }
 
                         mainHandler.post {
                             sendAdbEvent("failed")
 
                             result.error(
-                                "ADB_REJECTED",
-                                handshake.reason,
+                                "ADB_CONNECTION_ERROR",
+                                e.message ?: "ADB connection failed.",
                                 null
                             )
                         }
                     }
                 }
-
-            } catch (e: Exception) {
-
-                val wasCancelled =
-                    e is AdbConnectionCancelledException ||
-                        connection?.isCancelled() == true ||
-                        (
-                            connection != null &&
-                                adbConnection !== connection
-                        )
-
-                if (wasCancelled) {
-
-                    Log.i(TAG, "ADB connection was cancelled.")
-
-                    if (adbConnection === connection) {
-                        adbConnection = null
-                        adbTransport = null
-                        adbDeviceName = null
-                        adbStatus = "DISCONNECTED"
-                    }
-
-                    mainHandler.post {
-                        result.error(
-                            "ADB_CANCELLED",
-                            "ADB connection was cancelled.",
-                            null
-                        )
-                    }
-
-                } else {
-
-                    Log.e(TAG, "ADB connection failed", e)
-
-                    if (adbConnection === connection) {
-                        adbConnection = null
-                        adbTransport = null
-                        adbDeviceName = null
-                        adbStatus = "FAILED"
-                    }
-
-                    try {
-                        connection?.close()
-                    } catch (_: Exception) {
-                        // Continue failure reporting.
-                    }
-
-                    mainHandler.post {
-                        sendAdbEvent("failed")
-
-                        result.error(
-                            "ADB_CONNECTION_ERROR",
-                            e.message ?: "ADB connection failed.",
-                            null
-                        )
-                    }
-                }
             }
+        } catch (e: Exception) {
+            adbStatus = "FAILED"
+            adbDeviceName = null
+
+            sendAdbEvent("failed")
+
+            result.error(
+                "ADB_EXECUTOR_ERROR",
+                e.message ?: "Unable to start USB ADB connection.",
+                null
+            )
         }
     }
 
     private fun connectWirelessAdb(
-        call: io.flutter.plugin.common.MethodCall,
+        call: MethodCall,
         result: MethodChannel.Result
     ) {
         val host = call.argument<String>("host")?.trim()
         val port = call.argument<Number>("port")?.toInt()
 
-        if (host.isNullOrBlank() || port == null || port !in 1..65535) {
+        if (
+            host.isNullOrBlank() ||
+            port == null ||
+            port !in 1..65535
+        ) {
             result.error(
                 "INVALID_ARGUMENTS",
                 "A valid device IP address and TCP port are required.",
@@ -1084,90 +1139,180 @@ if (
             return
         }
 
-        val currentUsbStatus = getCurrentAdbStatus()
+        synchronized(adbLifecycleLock) {
 
-if (
-    wirelessStatus in setOf(
-        "CONNECTED",
-        "AUTHENTICATION_REQUIRED",
-        "CONNECTING"
-    ) ||
-    currentUsbStatus in setOf(
-        "CONNECTED",
-        "AUTHENTICATION_REQUIRED",
-        "CONNECTING"
-    ) ||
-    adbStatus in setOf(
-        "CONNECTED",
-        "AUTHENTICATION_REQUIRED",
-        "CONNECTING"
-    )
-) {
-    result.error(
-        "WIRELESS_BUSY",
-        "Wireless ADB cannot connect while USB ADB is active or connecting. Disconnect USB ADB first.",
-        null
-    )
-    return
-}
+            val currentUsbStatus = getCurrentAdbStatus()
 
-        val manager = wirelessManager ?: AdbWirelessManager(
-            authentication = AdbAuthentication(),
-            onStateChanged = { state ->
-                wirelessStatus = state.name
+            if (
+                wirelessStatus in setOf(
+                    "CONNECTED",
+                    "AUTHENTICATION_REQUIRED",
+                    "CONNECTING"
+                ) ||
+                currentUsbStatus in setOf(
+                    "CONNECTED",
+                    "AUTHENTICATION_REQUIRED",
+                    "CONNECTING"
+                ) ||
+                adbStatus in setOf(
+                    "CONNECTED",
+                    "AUTHENTICATION_REQUIRED",
+                    "CONNECTING"
+                )
+            ) {
+                result.error(
+                    "WIRELESS_BUSY",
+                    "Wireless ADB cannot connect while USB ADB is active or connecting. Disconnect USB ADB first.",
+                    null
+                )
+                return
             }
-        ).also {
-            wirelessManager = it
+
+            wirelessHost = host
+            wirelessPort = port
+            wirelessStatus = "CONNECTING"
         }
 
-        wirelessHost = host
-        wirelessPort = port
-        wirelessStatus = "CONNECTING"
+        val resultSent = AtomicBoolean(false)
 
-        val resultSent =
-            java.util.concurrent.atomic.AtomicBoolean(false)
+        if (!pendingWirelessResult.compareAndSet(null, result)) {
+            wirelessStatus = "DISCONNECTED"
 
-        wirelessExecutor.execute {
-            manager.connect(host, port) { info ->
+            result.error(
+                "WIRELESS_REQUEST_PENDING",
+                "Another Wireless ADB connection request is still pending.",
+                null
+            )
+            return
+        }
 
-                wirelessStatus = info.state.name
+        pendingWirelessResultSent.set(resultSent)
 
-                val isFinalState = when (info.state) {
-    AdbConnection.State.CONNECTED,
-    AdbConnection.State.FAILED,
-    AdbConnection.State.CLOSED,
-    AdbConnection.State.DISCONNECTED -> true
+        val manager = try {
+            wirelessManager ?: AdbWirelessManager(
+                authentication = AdbAuthentication(),
+                onStateChanged = { state ->
+                    wirelessStatus = state.name
+                }
+            ).also {
+                wirelessManager = it
+            }
+        } catch (e: Exception) {
+            pendingWirelessResult.compareAndSet(result, null)
+            pendingWirelessResultSent.compareAndSet(resultSent, null)
+            wirelessStatus = "FAILED"
 
-    else -> false
-}
+            result.error(
+                "WIRELESS_INITIALIZATION_ERROR",
+                e.message ?: "Unable to initialize Wireless ADB.",
+                null
+            )
+            return
+        }
 
-                if (isFinalState && resultSent.compareAndSet(false, true)) {
-                    mainHandler.post {
+        sendAdbEvent("wireless_connecting")
+
+        try {
+            wirelessExecutor.execute {
+
+                try {
+                    manager.connect(host, port) { info ->
+
+                        wirelessStatus = info.state.name
+
+                        val isFinalState = when (info.state) {
+                            AdbConnection.State.CONNECTED,
+                            AdbConnection.State.FAILED,
+                            AdbConnection.State.CLOSED,
+                            AdbConnection.State.DISCONNECTED -> true
+
+                            else -> false
+                        }
+
                         if (
-    info.state == AdbConnection.State.FAILED ||
-    info.state == AdbConnection.State.CLOSED ||
-    info.state == AdbConnection.State.DISCONNECTED
-) {
-                            result.error(
-                                "WIRELESS_CONNECTION_FAILED",
-                                info.error ?: "Wireless ADB connection ended before it was established.",
+                            isFinalState &&
+                            resultSent.compareAndSet(false, true)
+                        ) {
+                            pendingWirelessResult.compareAndSet(
+                                result,
                                 null
                             )
-                        } else {
-                            result.success(
-                                mapOf(
-                                    "status" to info.state.name,
-                                    "host" to info.host,
-                                    "port" to info.port,
-                                    "deviceBanner" to info.deviceBanner,
-                                    "features" to info.features,
-                                    "error" to info.error
-                                )
+
+                            pendingWirelessResultSent.compareAndSet(
+                                resultSent,
+                                null
+                            )
+
+                            mainHandler.post {
+
+                                if (
+                                    info.state == AdbConnection.State.FAILED ||
+                                    info.state == AdbConnection.State.CLOSED ||
+                                    info.state == AdbConnection.State.DISCONNECTED
+                                ) {
+                                    result.error(
+                                        "WIRELESS_CONNECTION_FAILED",
+                                        info.error
+                                            ?: "Wireless ADB connection ended before it was established.",
+                                        null
+                                    )
+                                } else {
+                                    result.success(
+                                        mapOf(
+                                            "status" to info.state.name,
+                                            "host" to info.host,
+                                            "port" to info.port,
+                                            "deviceBanner" to info.deviceBanner,
+                                            "features" to info.features,
+                                            "error" to info.error
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(
+                        TAG,
+                        "Unable to start Wireless ADB connection",
+                        e
+                    )
+
+                    if (resultSent.compareAndSet(false, true)) {
+                        pendingWirelessResult.compareAndSet(
+                            result,
+                            null
+                        )
+
+                        pendingWirelessResultSent.compareAndSet(
+                            resultSent,
+                            null
+                        )
+
+                        wirelessStatus = "FAILED"
+
+                        mainHandler.post {
+                            result.error(
+                                "WIRELESS_CONNECTION_ERROR",
+                                e.message
+                                    ?: "Unable to start Wireless ADB connection.",
+                                null
                             )
                         }
                     }
                 }
             }
+        } catch (e: Exception) {
+            pendingWirelessResult.compareAndSet(result, null)
+            pendingWirelessResultSent.compareAndSet(resultSent, null)
+
+            wirelessStatus = "FAILED"
+
+            result.error(
+                "WIRELESS_EXECUTOR_ERROR",
+                e.message ?: "Unable to schedule Wireless ADB connection.",
+                null
+            )
         }
     }
 
@@ -1195,18 +1340,35 @@ if (
             wirelessHost = null
             wirelessPort = null
 
+            val pendingResult = pendingWirelessResult.getAndSet(null)
+            val pendingSent = pendingWirelessResultSent.getAndSet(null)
+
+            if (
+                pendingResult != null &&
+                pendingSent?.compareAndSet(false, true) == true
+            ) {
+                mainHandler.post {
+                    pendingResult.error(
+                        "WIRELESS_CANCELLED",
+                        "Wireless ADB connection was cancelled.",
+                        null
+                    )
+                }
+            }
+
             result.success(
                 mapOf(
                     "status" to "DISCONNECTED",
                     "connected" to false
                 )
             )
+
         } catch (error: Exception) {
             Log.e(TAG, "Wireless ADB disconnect failed", error)
 
             result.error(
                 "WIRELESS_DISCONNECT_ERROR",
-                error.message ?: "Unable to disconnect wireless ADB.",
+                error.message ?: "Unable to disconnect Wireless ADB.",
                 null
             )
         }
@@ -1215,38 +1377,48 @@ if (
     private fun getAdbKeyFingerprint(
         result: MethodChannel.Result
     ) {
+        try {
+            adbExecutor.execute {
 
-        adbExecutor.execute {
+                try {
+                    val authentication = AdbAuthentication()
 
-            try {
-                val authentication = AdbAuthentication()
+                    authentication.initialize()
 
-                authentication.initialize()
+                    val fingerprint =
+                        authentication.getPublicKeyFingerprint()
 
-                val fingerprint =
-                    authentication.getPublicKeyFingerprint()
+                    mainHandler.post {
+                        result.success(fingerprint)
+                    }
 
-                mainHandler.post {
-                    result.success(fingerprint)
-                }
-
-            } catch (e: Exception) {
-
-                Log.e(TAG, "Unable to retrieve ADB fingerprint", e)
-
-                mainHandler.post {
-                    result.error(
-                        "ADB_KEY_ERROR",
-                        e.message ?: "Unable to retrieve ADB fingerprint.",
-                        null
+                } catch (e: Exception) {
+                    Log.e(
+                        TAG,
+                        "Unable to retrieve ADB fingerprint",
+                        e
                     )
+
+                    mainHandler.post {
+                        result.error(
+                            "ADB_KEY_ERROR",
+                            e.message
+                                ?: "Unable to retrieve ADB fingerprint.",
+                            null
+                        )
+                    }
                 }
             }
+        } catch (e: Exception) {
+            result.error(
+                "ADB_EXECUTOR_ERROR",
+                e.message ?: "Unable to schedule ADB fingerprint request.",
+                null
+            )
         }
     }
 
     private fun getCurrentAdbStatus(): String {
-
         val connection = adbConnection
 
         if (connection != null) {
@@ -1258,12 +1430,16 @@ if (
 
     private fun disconnectAdbInternal() {
 
-        val connection = adbConnection
+        val connection: AdbConnection?
 
-        adbConnection = null
-        adbTransport = null
-        adbDeviceName = null
-        adbStatus = "DISCONNECTED"
+        synchronized(adbLifecycleLock) {
+            connection = adbConnection
+
+            adbConnection = null
+            adbTransport = null
+            adbDeviceName = null
+            adbStatus = "DISCONNECTED"
+        }
 
         try {
             connection?.close()
@@ -1329,35 +1505,63 @@ if (
 
     override fun onDestroy() {
 
+        activityDestroyed = true
+
         disconnectAdbInternal()
 
-        wirelessManager?.shutdown()
+        try {
+            wirelessManager?.shutdown()
+        } catch (e: Exception) {
+            Log.e(TAG, "Wireless ADB shutdown failed", e)
+        }
+
         wirelessManager = null
+
+        val pendingResult = pendingWirelessResult.getAndSet(null)
+        val pendingSent = pendingWirelessResultSent.getAndSet(null)
+
+        if (
+            pendingResult != null &&
+            pendingSent?.compareAndSet(false, true) == true
+        ) {
+            mainHandler.post {
+                pendingResult.error(
+                    "ACTIVITY_DESTROYED",
+                    "The activity was destroyed before Wireless ADB completed.",
+                    null
+                )
+            }
+        }
 
         wirelessExecutor.shutdownNow()
         adbExecutor.shutdownNow()
         terminalExecutor.shutdownNow()
+
+        eventSink = null
 
         super.onDestroy()
     }
 
     private fun sendUsbEvent(event: String) {
 
-        try {
-            eventSink?.success(
-                mapOf(
-                    "event" to event,
-                    "devices" to getConnectedUsbDevices()
+        mainHandler.post {
+            try {
+                eventSink?.success(
+                    mapOf(
+                        "event" to event,
+                        "devices" to getConnectedUsbDevices()
+                    )
                 )
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Unable to send USB event: $event", e)
+            } catch (e: Exception) {
+                Log.e(TAG, "Unable to send USB event: $event", e)
 
-            eventSink?.error(
-                "USB_EVENT_ERROR",
-                e.message ?: "Unable to retrieve USB device information",
-                null
-            )
+                eventSink?.error(
+                    "USB_EVENT_ERROR",
+                    e.message
+                        ?: "Unable to retrieve USB device information.",
+                    null
+                )
+            }
         }
     }
 
@@ -1457,7 +1661,6 @@ if (
     private fun getEndpointDirection(
         endpoint: UsbEndpoint
     ): String {
-
         return when (endpoint.direction) {
             UsbConstants.USB_DIR_IN -> "IN"
             UsbConstants.USB_DIR_OUT -> "OUT"
@@ -1468,7 +1671,6 @@ if (
     private fun getEndpointType(
         endpoint: UsbEndpoint
     ): String {
-
         return when (endpoint.type) {
             UsbConstants.USB_ENDPOINT_XFER_BULK -> "BULK"
             UsbConstants.USB_ENDPOINT_XFER_CONTROL -> "CONTROL"
@@ -1486,15 +1688,15 @@ if (
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 packageManager.getPackageInfo(
                     packageName,
-                    android.content.pm.PackageManager.PackageInfoFlags.of(
-                        android.content.pm.PackageManager.GET_PERMISSIONS.toLong()
+                    PackageManager.PackageInfoFlags.of(
+                        PackageManager.GET_PERMISSIONS.toLong()
                     )
                 )
             } else {
                 @Suppress("DEPRECATION")
                 packageManager.getPackageInfo(
                     packageName,
-                    android.content.pm.PackageManager.GET_PERMISSIONS
+                    PackageManager.GET_PERMISSIONS
                 )
             }
 
@@ -1635,7 +1837,9 @@ if (
         return "normal"
     }
 
-    private fun requestDevicePermission(device: UsbDevice) {
+    private fun requestDevicePermission(
+        device: UsbDevice
+    ) {
 
         val intent = Intent(ACTION_USB_PERMISSION)
             .setPackage(packageName)
@@ -1660,7 +1864,9 @@ if (
         )
     }
 
-    private fun calculateSha256(file: File): String {
+    private fun calculateSha256(
+        file: File
+    ): String {
 
         val digest = MessageDigest.getInstance("SHA-256")
 
@@ -1693,8 +1899,6 @@ if (
             var backupDirectory: File? = null
 
             try {
-
-                // Retrieve the installed application's APK files.
                 val appInfo = packageManager.getApplicationInfo(
                     packageName,
                     0
@@ -1708,16 +1912,15 @@ if (
                     sourceFiles.add(File(path))
                 }
 
-                // Reject duplicate APK source files.
-val sourcePaths = sourceFiles.map {
-    it.canonicalPath
-}
+                val sourcePaths = sourceFiles.map {
+                    it.canonicalPath
+                }
 
-if (sourcePaths.toSet().size != sourcePaths.size) {
-    throw IllegalStateException(
-        "Duplicate APK source files were detected."
-    )
-}
+                if (sourcePaths.toSet().size != sourcePaths.size) {
+                    throw IllegalStateException(
+                        "Duplicate APK source files were detected."
+                    )
+                }
 
                 if (
                     sourceFiles.isEmpty() ||
@@ -1730,7 +1933,6 @@ if (sourcePaths.toSet().size != sourcePaths.size) {
                     )
                 }
 
-                // Create a private backup directory.
                 val safePackageName = packageName.replace(
                     Regex("[^A-Za-z0-9._-]"),
                     "_"
@@ -1742,17 +1944,15 @@ if (sourcePaths.toSet().size != sourcePaths.size) {
                 )
 
                 if (!directory.mkdirs() && !directory.isDirectory) {
-              throw IllegalStateException(
-             "Unable to create the APK backup directory."
-        )
-    }
+                    throw IllegalStateException(
+                        "Unable to create the APK backup directory."
+                    )
+                }
 
-                // Register the directory for cleanup only after creation.
                 backupDirectory = directory
 
                 val backupFiles = mutableListOf<Map<String, Any>>()
 
-                // Copy and verify every APK file.
                 sourceFiles.forEachIndexed { index, sourceFile ->
 
                     val fileName = if (index == 0) {
@@ -1766,29 +1966,21 @@ if (sourcePaths.toSet().size != sourcePaths.size) {
                         fileName
                     )
 
-                    // Calculate the original hash before copying.
                     val originalHash = calculateSha256(sourceFile)
 
-                    // Copy without modifying the original file.
                     FileInputStream(sourceFile).use { input ->
-
                         FileOutputStream(destinationFile).use { output ->
-
                             input.copyTo(output)
-
-                            // Ensure copied data is flushed to storage.
                             output.fd.sync()
                         }
                     }
 
-                    // Check file size.
                     if (sourceFile.length() != destinationFile.length()) {
                         throw IllegalStateException(
                             "File size verification failed for $fileName"
                         )
                     }
 
-                    // Verify the copied file's SHA-256 fingerprint.
                     val backupHash = calculateSha256(destinationFile)
 
                     if (originalHash != backupHash) {
@@ -1807,8 +1999,11 @@ if (sourcePaths.toSet().size != sourcePaths.size) {
                     )
                 }
 
-                // Return success only after every file passes verification.
-                runOnUiThread {
+                mainHandler.post {
+
+                    if (activityDestroyed) {
+                        return@post
+                    }
 
                     result.success(
                         mapOf(
@@ -1830,7 +2025,6 @@ if (sourcePaths.toSet().size != sourcePaths.size) {
                     e
                 )
 
-                // Remove incomplete backup files.
                 backupDirectory?.let { directory ->
                     try {
                         directory.deleteRecursively()
@@ -1843,14 +2037,15 @@ if (sourcePaths.toSet().size != sourcePaths.size) {
                     }
                 }
 
-                // Return the error on Android's main thread.
-                runOnUiThread {
-
-                    result.error(
-                        "APK_EXPORT_ERROR",
-                        e.message ?: "Unable to export application APK.",
-                        null
-                    )
+                mainHandler.post {
+                    if (!activityDestroyed) {
+                        result.error(
+                            "APK_EXPORT_ERROR",
+                            e.message
+                                ?: "Unable to export application APK.",
+                            null
+                        )
+                    }
                 }
             }
 
@@ -1858,252 +2053,247 @@ if (sourcePaths.toSet().size != sourcePaths.size) {
     }
 
     private fun shareApplicationApkBackup(
-    backupDirectoryPath: String,
-    fileMetadata: List<*>,
-    result: MethodChannel.Result
-) {
+        backupDirectoryPath: String,
+        fileMetadata: List<*>,
+        result: MethodChannel.Result
+    ) {
 
-    Thread({
+        Thread({
 
-        try {
-            // Only allow direct child directories of apk_exports.
-            val backupRoot = File(
-                filesDir,
-                "apk_exports"
-            ).canonicalFile
-
-            val backupDirectory =
-                File(backupDirectoryPath).canonicalFile
-
-            if (
-                backupDirectory.parentFile != backupRoot ||
-                !backupDirectory.isDirectory
-            ) {
-                throw SecurityException(
-                    "The requested backup directory is not permitted."
-                )
-            }
-
-            val validatedFiles = mutableListOf<File>()
-
-            val seenNames = mutableSetOf<String>()
-
-            // Verify every APK before sharing.
-            fileMetadata.forEach { item ->
-
-                val metadata = item as? Map<*, *>
-                    ?: throw IllegalArgumentException(
-                        "Invalid APK backup metadata."
-                    )
-
-                val fileName = metadata["fileName"] as? String
-                    ?: throw IllegalArgumentException(
-                        "APK filename is missing."
-                    )
-
-                val expectedHash = metadata["sha256"] as? String
-                    ?: throw IllegalArgumentException(
-                        "APK SHA-256 fingerprint is missing."
-                    )
-
-                val verified = metadata["verified"] as? Boolean
-                    ?: false
-
-                val expectedSize =
-                    (metadata["sizeBytes"] as? Number)?.toLong()
-                        ?: throw IllegalArgumentException(
-                            "APK file size is missing."
-                        )
-
-                if (!verified) {
-                    throw SecurityException(
-                        "An APK file has not passed backup verification."
-                    )
-                }
-
-                if (
-                    !fileName.matches(
-                        Regex("""(?:base|split_[0-9]+)\.apk""")
-                    )
-                ) {
-                    throw SecurityException(
-                        "An invalid APK filename was supplied."
-                    )
-                }
-
-                if (!seenNames.add(fileName)) {
-                    throw SecurityException(
-                        "Duplicate APK filename detected."
-                    )
-                }
-
-                if (!expectedHash.matches(Regex("[A-Fa-f0-9]{64}"))) {
-                    throw SecurityException(
-                        "Invalid SHA-256 fingerprint."
-                    )
-                }
-
-                val apkFile = File(
-                    backupDirectory,
-                    fileName
+            try {
+                val backupRoot = File(
+                    filesDir,
+                    "apk_exports"
                 ).canonicalFile
 
+                val backupDirectory =
+                    File(backupDirectoryPath).canonicalFile
+
                 if (
-                    apkFile.parentFile != backupDirectory ||
-                    !apkFile.exists() ||
-                    !apkFile.isFile ||
-                    !apkFile.canRead()
+                    backupDirectory.parentFile != backupRoot ||
+                    !backupDirectory.isDirectory
                 ) {
                     throw SecurityException(
-                        "An APK backup file is unavailable."
+                        "The requested backup directory is not permitted."
                     )
                 }
 
-                if (apkFile.length() != expectedSize) {
-                    throw SecurityException(
-                        "APK size verification failed for $fileName."
-                    )
-                }
+                val validatedFiles = mutableListOf<File>()
+                val seenNames = mutableSetOf<String>()
 
-                val actualHash = calculateSha256(apkFile)
+                fileMetadata.forEach { item ->
 
-                if (!actualHash.equals(expectedHash, ignoreCase = true)) {
-                    throw SecurityException(
-                        "APK integrity verification failed for $fileName."
-                    )
-                }
-
-                validatedFiles.add(apkFile)
-            }
-
-            if (
-    validatedFiles.isEmpty() ||
-    "base.apk" !in seenNames
-) {
-    throw IllegalStateException(
-        "The backup must contain a verified base.apk file."
-    )
-}
-
-// Verify that split APK numbering is complete.
-val splitIndexes = seenNames
-    .filter { it.startsWith("split_") }
-    .mapNotNull {
-        Regex("""^split_([0-9]+)\.apk$""")
-            .matchEntire(it)
-            ?.groupValues
-            ?.get(1)
-            ?.toIntOrNull()
-    }
-    .sorted()
-
-for (index in splitIndexes.indices) {
-    if (splitIndexes[index] != index + 1) {
-        throw IllegalStateException(
-            "The APK backup is missing a split file."
-        )
-    }
-}
-
-            // Create secure FileProvider content URIs.
-            val apkUris = ArrayList<Uri>()
-
-            validatedFiles.forEach { apkFile ->
-
-                val uri = FileProvider.getUriForFile(
-                    this,
-                    "$packageName.fileprovider",
-                    apkFile
-                )
-
-                apkUris.add(uri)
-            }
-
-            // Open Android's sharing interface on the main thread.
-            mainHandler.post {
-
-                try {
-
-                    val shareIntent = Intent(
-                        Intent.ACTION_SEND_MULTIPLE
-                    ).apply {
-
-                        type = "application/vnd.android.package-archive"
-
-                        putParcelableArrayListExtra(
-                            Intent.EXTRA_STREAM,
-                            apkUris
+                    val metadata = item as? Map<*, *>
+                        ?: throw IllegalArgumentException(
+                            "Invalid APK backup metadata."
                         )
 
-                        addFlags(
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    val fileName = metadata["fileName"] as? String
+                        ?: throw IllegalArgumentException(
+                            "APK filename is missing."
                         )
 
-                        clipData = ClipData.newUri(
-                            contentResolver,
-                            "Verified APK backup",
-                            apkUris.first()
-                        ).apply {
+                    val expectedHash = metadata["sha256"] as? String
+                        ?: throw IllegalArgumentException(
+                            "APK SHA-256 fingerprint is missing."
+                        )
 
-                            apkUris.drop(1).forEach { uri ->
-                                addItem(
-                                    ClipData.Item(uri)
-                                )
-                            }
-                        }
+                    val verified =
+                        metadata["verified"] as? Boolean ?: false
+
+                    val expectedSize =
+                        (metadata["sizeBytes"] as? Number)?.toLong()
+                            ?: throw IllegalArgumentException(
+                                "APK file size is missing."
+                            )
+
+                    if (!verified) {
+                        throw SecurityException(
+                            "An APK file has not passed backup verification."
+                        )
                     }
 
-                    startActivity(
-                        Intent.createChooser(
-                            shareIntent,
-                            "Share verified APK backup"
+                    if (
+                        !fileName.matches(
+                            Regex("""(?:base|split_[0-9]+)\.apk""")
                         )
-                    )
-
-                    result.success(
-                        mapOf(
-                            "success" to true,
-                            "fileCount" to apkUris.size,
-                            "integrityVerified" to true
+                    ) {
+                        throw SecurityException(
+                            "An invalid APK filename was supplied."
                         )
+                    }
+
+                    if (!seenNames.add(fileName)) {
+                        throw SecurityException(
+                            "Duplicate APK filename detected."
+                        )
+                    }
+
+                    if (!expectedHash.matches(Regex("[A-Fa-f0-9]{64}"))) {
+                        throw SecurityException(
+                            "Invalid SHA-256 fingerprint."
+                        )
+                    }
+
+                    val apkFile = File(
+                        backupDirectory,
+                        fileName
+                    ).canonicalFile
+
+                    if (
+                        apkFile.parentFile != backupDirectory ||
+                        !apkFile.exists() ||
+                        !apkFile.isFile ||
+                        !apkFile.canRead()
+                    ) {
+                        throw SecurityException(
+                            "An APK backup file is unavailable."
+                        )
+                    }
+
+                    if (apkFile.length() != expectedSize) {
+                        throw SecurityException(
+                            "APK size verification failed for $fileName."
+                        )
+                    }
+
+                    val actualHash = calculateSha256(apkFile)
+
+                    if (!actualHash.equals(expectedHash, ignoreCase = true)) {
+                        throw SecurityException(
+                            "APK integrity verification failed for $fileName."
+                        )
+                    }
+
+                    validatedFiles.add(apkFile)
+                }
+
+                if (
+                    validatedFiles.isEmpty() ||
+                    "base.apk" !in seenNames
+                ) {
+                    throw IllegalStateException(
+                        "The backup must contain a verified base.apk file."
+                    )
+                }
+
+                val splitIndexes = seenNames
+                    .filter { it.startsWith("split_") }
+                    .mapNotNull {
+                        Regex("""^split_([0-9]+)\.apk$""")
+                            .matchEntire(it)
+                            ?.groupValues
+                            ?.get(1)
+                            ?.toIntOrNull()
+                    }
+                    .sorted()
+
+                for (index in splitIndexes.indices) {
+                    if (splitIndexes[index] != index + 1) {
+                        throw IllegalStateException(
+                            "The APK backup is missing a split file."
+                        )
+                    }
+                }
+
+                val apkUris = ArrayList<Uri>()
+
+                validatedFiles.forEach { apkFile ->
+
+                    val uri = FileProvider.getUriForFile(
+                        this,
+                        "$packageName.fileprovider",
+                        apkFile
                     )
 
-                } catch (e: Exception) {
+                    apkUris.add(uri)
+                }
 
-                    Log.e(
-                        TAG,
-                        "Unable to open APK sharing interface",
-                        e
-                    )
+                mainHandler.post {
 
-                    result.error(
-                        "APK_SHARE_ERROR",
-                        e.message ?: "Unable to share APK backup.",
-                        null
-                    )
+                    if (activityDestroyed) {
+                        return@post
+                    }
+
+                    try {
+                        val shareIntent = Intent(
+                            Intent.ACTION_SEND_MULTIPLE
+                        ).apply {
+
+                            type =
+                                "application/vnd.android.package-archive"
+
+                            putParcelableArrayListExtra(
+                                Intent.EXTRA_STREAM,
+                                apkUris
+                            )
+
+                            addFlags(
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+
+                            clipData = ClipData.newUri(
+                                contentResolver,
+                                "Verified APK backup",
+                                apkUris.first()
+                            ).apply {
+
+                                apkUris.drop(1).forEach { uri ->
+                                    addItem(ClipData.Item(uri))
+                                }
+                            }
+                        }
+
+                        startActivity(
+                            Intent.createChooser(
+                                shareIntent,
+                                "Share verified APK backup"
+                            )
+                        )
+
+                        result.success(
+                            mapOf(
+                                "success" to true,
+                                "fileCount" to apkUris.size,
+                                "integrityVerified" to true
+                            )
+                        )
+
+                    } catch (e: Exception) {
+                        Log.e(
+                            TAG,
+                            "Unable to open APK sharing interface",
+                            e
+                        )
+
+                        result.error(
+                            "APK_SHARE_ERROR",
+                            e.message
+                                ?: "Unable to share APK backup.",
+                            null
+                        )
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "APK backup sharing verification failed",
+                    e
+                )
+
+                mainHandler.post {
+                    if (!activityDestroyed) {
+                        result.error(
+                            "APK_SHARE_VERIFICATION_ERROR",
+                            e.message
+                                ?: "APK backup verification failed.",
+                            null
+                        )
+                    }
                 }
             }
 
-        } catch (e: Exception) {
-
-            Log.e(
-                TAG,
-                "APK backup sharing verification failed",
-                e
-            )
-
-            mainHandler.post {
-
-                result.error(
-                    "APK_SHARE_VERIFICATION_ERROR",
-                    e.message ?: "APK backup verification failed.",
-                    null
-                )
-            }
-        }
-
-     }, "APK-Share-Worker").start()
-    
-  }
-    
+        }, "APK-Share-Worker").start()
+    }
 }
