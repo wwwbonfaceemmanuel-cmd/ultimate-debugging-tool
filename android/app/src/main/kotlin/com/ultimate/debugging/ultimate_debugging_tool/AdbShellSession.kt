@@ -75,35 +75,25 @@ class AdbShellSession(
      * after the shell session has been created.
      */
     private fun readIncomingPackets() {
+    try {
+        while (!closed.get()) {
+            val packet = transport.readPacket()
 
-        try {
-            while (!closed.get()) {
-
-                val packet = transport.readPacket()
-
-                if (closed.get()) {
-                    break
-                }
-
-                incomingPackets.put(packet)
+            if (closed.get()) {
+                break
             }
 
-        } catch (error: Exception) {
-
-            if (!closed.get()) {
-                incomingPackets.offer(
-                    AdbProtocol.AdbPacket(
-                        command = AdbProtocol.CMD_CLSE,
-                        arg0 = -1,
-                        arg1 = -1,
-                        data = error.message
-                            .orEmpty()
-                            .toByteArray(StandardCharsets.UTF_8)
-                    )
-                )
-            }
+            incomingPackets.put(packet)
+        }
+    } catch (error: Exception) {
+        if (!closed.get()) {
+            readerFailure = IOException(
+                "ADB shell reader failed: ${error.message}",
+                error
+            )
         }
     }
+}
 
     /**
      * Executes one command on the connected Android device.
