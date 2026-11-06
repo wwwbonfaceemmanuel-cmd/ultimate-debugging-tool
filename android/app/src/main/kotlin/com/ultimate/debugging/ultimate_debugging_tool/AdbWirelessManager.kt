@@ -5,6 +5,7 @@ import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Manages standard wireless ADB TCP connections.
@@ -27,7 +28,9 @@ class AdbWirelessManager(
     )
 
     private val executor = Executors.newSingleThreadExecutor()
+
     private val cancelled = AtomicBoolean(false)
+    private val attemptCounter = AtomicLong(0L)
 
     @Volatile
     private var transport: AdbTcpTransport? = null
@@ -44,12 +47,6 @@ class AdbWirelessManager(
     @Volatile
     private var closed = false
 
-    /**
-     * Starts a wireless TCP ADB connection.
-     *
-     * The target must already have ADB TCP enabled
-     * and must accept the connection.
-     */
     @Synchronized
     fun connect(
         host: String,
@@ -57,11 +54,12 @@ class AdbWirelessManager(
         callback: (ConnectionInfo) -> Unit
     ) {
         if (closed) {
-            callback(
+            notifyCallback(
+                callback,
                 ConnectionInfo(
-                    host,
-                    port,
-                    AdbConnection.State.FAILED,
+                    host = host,
+                    port = port,
+                    state = AdbConnection.State.FAILED,
                     error = "Wireless manager is closed."
                 )
             )
@@ -69,11 +67,12 @@ class AdbWirelessManager(
         }
 
         if (connectionTask?.isDone == false) {
-            callback(
+            notifyCallback(
+                callback,
                 ConnectionInfo(
-                    host,
-                    port,
-                    AdbConnection.State.FAILED,
+                    host = host,
+                    port = port,
+                    state = AdbConnection.State.FAILED,
                     error = "A wireless connection attempt is already running."
                 )
             )
@@ -81,43 +80,71 @@ class AdbWirelessManager(
         }
 
         if (host.isBlank() || port !in 1..65535) {
-            callback(
+            notifyCallback(
+                callback,
                 ConnectionInfo(
-                    host,
-                    port,
-                    AdbConnection.State.FAILED,
-                    error = "Invalid device address or TCP port."
+                    host = host,
+                    port = port,
+                    state = AdbConnection.State.FAILED,
+                    error = "Invalid wireless ADB host or port."
                 )
             )
             return
         }
 
-        // Do not replace an existing live connection.
+        val currentState = connectionInfo?.state
+
         if (
-            connectionInfo?.state == AdbConnection.State.CONNECTED ||
-            connectionInfo?.state == AdbConnection.State.AUTHENTICATION_REQUIRED
+            currentState == AdbConnection.State.CONNECTED ||
+            currentState == AdbConnection.State.AUTHENTICATION_REQUIRED
         ) {
-            callback(
+            notifyCallback(
+                callback,
                 ConnectionInfo(
-                    host,
-                    port,
-                    AdbConnection.State.FAILED,
-                    error = "Disconnect the existing wireless session first."
+                    host = host,
+                    port = port,
+                    state = AdbConnection.State.FAILED,
+                    error = "Disconnect the existing wireless connection first."
                 )
             )
             return
+        }
+
+        val previousConnection = connection
+        val previousTransport = transport
+
+        connection = null
+        transport = null
+        connectionInfo = null
+
+        try {
+            previousConnection?.close()
+        } catch (_: Exception) {
+            try {
+                previousTransport?.close()
+            } catch (_: Exception) {
+                // Continue with the new connection attempt.
+            }
         }
 
         cancelled.set(false)
 
+        val attemptId = attemptCounter.incrementAndGet()
+
         connectionTask = executor.submit {
-            performConnection(host, port, callback)
+            performConnection(
+                host = host,
+                port = port,
+                attemptId = attemptId,
+                callback = callback
+            )
         }
     }
 
     private fun performConnection(
         host: String,
         port: Int,
+        attemptId: Long,
         callback: (ConnectionInfo) -> Unit
     ) {
         var activeTransport: AdbTcpTransport? = null
@@ -126,13 +153,16 @@ class AdbWirelessManager(
 
         try {
             publish(
+                attemptId,
                 ConnectionInfo(
-                    host,
-                    port,
-                    AdbConnection.State.CONNECTING
+                    host = host,
+                    port = port,
+                    state = AdbConnection.State.CONNECTING
                 ),
                 callback
             )
+
+            checkAttempt(attemptId)
 
             activeTransport = AdbTcpTransport(
                 host = host,
@@ -140,23 +170,19 @@ class AdbWirelessManager(
             )
 
             synchronized(this) {
-                if (closed || cancelled.get()) {
-                    throw IOException("Wireless connection cancelled.")
-                }
-
+                checkAttempt(attemptId)
                 transport = activeTransport
             }
 
             activeTransport.open()
 
-            if (cancelled.get()) {
-                throw IOException("Wireless connection cancelled.")
-            }
+            checkAttempt(attemptId)
 
             activeConnection = AdbConnection(
                 transport = activeTransport,
                 onStateChanged = { state ->
                     publish(
+                        attemptId,
                         ConnectionInfo(
                             host = host,
                             port = port,
@@ -168,18 +194,13 @@ class AdbWirelessManager(
             )
 
             synchronized(this) {
-                if (closed || cancelled.get()) {
-                    throw IOException("Wireless connection cancelled.")
-                }
-
+                checkAttempt(attemptId)
                 connection = activeConnection
             }
 
             val result = activeConnection.connect(authentication)
 
-            if (cancelled.get() || closed) {
-                throw IOException("Wireless connection cancelled.")
-            }
+            checkAttempt(attemptId)
 
             val finalInfo = when (result) {
 
@@ -189,9 +210,7 @@ class AdbWirelessManager(
                     ConnectionInfo(
                         host = host,
                         port = port,
-                        state = AdbConnection.State.CONNECTED,
-                        deviceBanner = result.deviceBanner,
-                        features = result.features
+                        state = AdbConnection.State.CONNECTED
                     )
                 }
 
@@ -202,7 +221,7 @@ class AdbWirelessManager(
                         host = host,
                         port = port,
                         state = AdbConnection.State.AUTHENTICATION_REQUIRED,
-                        error = "Device authorization is required."
+                        error = "ADB authentication is required."
                     )
                 }
 
@@ -211,29 +230,37 @@ class AdbWirelessManager(
                         host = host,
                         port = port,
                         state = AdbConnection.State.FAILED,
-                        error = result.reason
+                        error = "The device rejected the ADB connection."
                     )
                 }
             }
 
-            publish(finalInfo, callback)
+            publish(attemptId, finalInfo, callback)
 
         } catch (error: Exception) {
 
             retainConnection = false
 
-            val failedInfo = ConnectionInfo(
-                host = host,
-                port = port,
-                state = if (cancelled.get() || closed) {
-                    AdbConnection.State.CLOSED
-                } else {
-                    AdbConnection.State.FAILED
-                },
-                error = error.message ?: "Wireless ADB connection failed."
-            )
+            val wasCancelled =
+                cancelled.get() ||
+                closed ||
+                attemptCounter.get() != attemptId
 
-            publish(failedInfo, callback)
+            publish(
+                attemptId,
+                ConnectionInfo(
+                    host = host,
+                    port = port,
+                    state = if (wasCancelled) {
+                        AdbConnection.State.CLOSED
+                    } else {
+                        AdbConnection.State.FAILED
+                    },
+                    error = error.message
+                        ?: "Wireless ADB connection failed."
+                ),
+                callback
+            )
 
         } finally {
 
@@ -252,57 +279,100 @@ class AdbWirelessManager(
                 try {
                     activeConnection?.close()
                 } catch (_: Exception) {
-                    activeTransport?.close()
+                    try {
+                        activeTransport?.close()
+                    } catch (_: Exception) {
+                        // Cleanup continues.
+                    }
+                }
+
+                if (activeConnection == null) {
+                    try {
+                        activeTransport?.close()
+                    } catch (_: Exception) {
+                        // Transport cleanup completed or already closed.
+                    }
                 }
             }
         }
     }
 
+    private fun checkAttempt(attemptId: Long) {
+        if (
+            closed ||
+            cancelled.get() ||
+            attemptCounter.get() != attemptId
+        ) {
+            throw IOException("Wireless connection attempt was cancelled.")
+        }
+    }
+
     private fun publish(
+        attemptId: Long,
         info: ConnectionInfo,
         callback: (ConnectionInfo) -> Unit
     ) {
-        connectionInfo = info
+        synchronized(this) {
+            if (
+                closed ||
+                cancelled.get() ||
+                attemptCounter.get() != attemptId
+            ) {
+                return
+            }
 
-        onStateChanged?.invoke(info.state)
-        callback(info)
+            connectionInfo = info
+        }
+
+        try {
+            onStateChanged?.invoke(info.state)
+        } catch (_: Exception) {
+            // A state listener must not break the ADB connection.
+        }
+
+        notifyCallback(callback, info)
     }
 
-    /**
-     * Returns the latest wireless connection information.
-     */
+    private fun notifyCallback(
+        callback: (ConnectionInfo) -> Unit,
+        info: ConnectionInfo
+    ) {
+        try {
+            callback(info)
+        } catch (_: Exception) {
+            // A callback failure must not crash the manager.
+        }
+    }
+
     fun getConnectionInfo(): ConnectionInfo? {
         return connectionInfo
     }
 
-    /**
- * Executes a command through the authenticated wireless ADB session.
- */
-fun executeCommand(
-    command: String,
-    timeoutMs: Long = 30000L
-): AdbShellSession.CommandResult {
+    @Throws(IOException::class)
+    fun executeCommand(
+        command: String,
+        timeoutMs: Long = 30000L
+    ): CommandResult {
+        val activeConnection = connection
+            ?: throw IOException("No wireless ADB connection is available.")
 
-    val activeConnection = connection
-        ?: throw IOException("Wireless ADB is not connected.")
+        if (!activeConnection.isConnected()) {
+            throw IOException("Wireless ADB is not connected.")
+        }
 
-    if (!activeConnection.isConnected()) {
-        throw IOException(
-            "Wireless ADB must be connected and authenticated first."
+        return activeConnection.createShellSession().execute(
+            command,
+            timeoutMs
         )
     }
 
-    return activeConnection
-        .createShellSession()
-        .execute(command, timeoutMs)
-}
-
-    /**
-     * Disconnects the wireless ADB session.
-     */
     @Synchronized
     fun disconnect() {
         cancelled.set(true)
+        attemptCounter.incrementAndGet()
+
+        connectionTask?.cancel(true)
+        connectionTask = null
 
         val activeConnection = connection
         val activeTransport = transport
@@ -314,25 +384,30 @@ fun executeCommand(
         try {
             activeConnection?.close()
         } catch (_: Exception) {
-            activeTransport?.close()
+            // Ensure the transport is also closed.
         }
 
-        if (activeConnection == null) {
+        try {
             activeTransport?.close()
+        } catch (_: Exception) {
+            // Transport may already be closed.
+        }
+
+        try {
+            onStateChanged?.invoke(AdbConnection.State.CLOSED)
+        } catch (_: Exception) {
+            // Ignore listener failures during disconnect.
         }
     }
 
-    /**
-     * Permanently releases manager resources.
-     */
     @Synchronized
     fun shutdown() {
         if (closed) return
 
         closed = true
+
         disconnect()
 
-        connectionTask?.cancel(true)
         executor.shutdownNow()
     }
 }
