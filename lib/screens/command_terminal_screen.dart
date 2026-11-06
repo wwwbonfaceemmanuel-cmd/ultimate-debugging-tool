@@ -12,6 +12,9 @@ class CommandTerminalScreen extends StatefulWidget {
 
 class _CommandTerminalScreenState
     extends State<CommandTerminalScreen> {
+  
+  static const MethodChannel _terminalChannel =
+    MethodChannel('com.ultimate.debugging/usb');
   final TextEditingController _commandController =
       TextEditingController();
 
