@@ -6,6 +6,7 @@ import 'screens/adb_manager_screen.dart';
 import 'screens/wireless_adb_screen.dart';
 import 'screens/diagnostics_screen.dart';
 import 'screens/apk_manager_screen.dart';
+import 'screens/command_terminal_screen.dart';
 
 void main() {
   runApp(const UltimateDebuggingTool());
