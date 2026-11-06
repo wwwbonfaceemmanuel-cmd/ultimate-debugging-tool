@@ -12,9 +12,9 @@ class CommandTerminalScreen extends StatefulWidget {
 
 class _CommandTerminalScreenState
     extends State<CommandTerminalScreen> {
-  
   static const MethodChannel _terminalChannel =
-    MethodChannel('com.ultimate.debugging/usb');
+      MethodChannel('com.ultimate.debugging/usb');
+
   final TextEditingController _commandController =
       TextEditingController();
 
@@ -26,19 +26,74 @@ class _CommandTerminalScreenState
     'Advanced Command Terminal',
     'Terminal interface initialized.',
     '',
-    'Execution engine: Not connected',
+    'Execution engine: Checking connection...',
     'Mode: STANDARD ANDROID',
     '',
     'Type a command below to begin.',
   ];
 
   String _executionMode = 'STANDARD ANDROID';
+  String _engineStatus = 'CHECKING';
+
+  @override
+  void initState() {
+    super.initState();
+    _checkExecutionEngine();
+  }
 
   @override
   void dispose() {
     _commandController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkExecutionEngine() async {
+    try {
+      final response =
+          await _terminalChannel.invokeMethod<String>(
+        'executeStandardDiagnostic',
+        {'command': 'help'},
+      );
+
+      if (!mounted) return;
+
+      if (response != null && response.trim().isNotEmpty) {
+        setState(() {
+          _engineStatus = 'READY';
+        });
+
+        _addOutput(
+          'Execution engine: READY. Native Android connection verified.',
+        );
+      } else {
+        setState(() {
+          _engineStatus = 'OFFLINE';
+        });
+
+        _addOutput(
+          'Execution engine: No response from native Android engine.',
+        );
+      }
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _engineStatus = 'OFFLINE';
+      });
+
+      _addOutput(
+        'Execution engine connection failed: ${e.message ?? e.code}',
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _engineStatus = 'OFFLINE';
+      });
+
+      _addOutput('Execution engine error: $e');
+    }
   }
 
   void _clearTerminal() {
@@ -48,6 +103,8 @@ class _CommandTerminalScreenState
   }
 
   void _addOutput(String message) {
+    if (!mounted) return;
+
     setState(() {
       _terminalOutput.add(message);
     });
@@ -64,50 +121,49 @@ class _CommandTerminalScreenState
   }
 
   Future<void> _submitCommand() async {
-  final command = _commandController.text.trim();
+    final command = _commandController.text.trim();
 
-  if (command.isEmpty) return;
+    if (command.isEmpty) return;
 
-  _commandController.clear();
+    _commandController.clear();
 
-  if (command.toLowerCase() == 'clear') {
-    _clearTerminal();
-    return;
-  }
+    if (command.toLowerCase() == 'clear') {
+      _clearTerminal();
+      return;
+    }
 
-  _addOutput('> $command');
+    _addOutput('> $command');
 
     final method = _executionMode == 'ADB MODE'
-      ? 'executeAdbCommand'
-      : _executionMode == 'ROOT MODE'
-          ? 'executeRootCommand'
-          : 'executeStandardDiagnostic';
+        ? 'executeAdbCommand'
+        : _executionMode == 'ROOT MODE'
+            ? 'executeRootCommand'
+            : 'executeStandardDiagnostic';
 
-  try {
-    final output = await _terminalChannel.invokeMethod<String>(
-            method,
-      {
-        'command': command,
-      },
-    );
+    try {
+      final output =
+          await _terminalChannel.invokeMethod<String>(
+        method,
+        {'command': command},
+      );
+
+      if (!mounted) return;
+
+      _addOutput(output ?? 'No output returned.');
+    } on PlatformException catch (e) {
+      if (!mounted) return;
+
+      _addOutput('ERROR: ${e.message ?? e.code}');
+    } catch (e) {
+      if (!mounted) return;
+
+      _addOutput('UNEXPECTED ERROR: $e');
+    }
 
     if (!mounted) return;
 
-    _addOutput(output ?? 'No output returned.');
-  } on PlatformException catch (e) {
-    if (!mounted) return;
-
-    _addOutput('ERROR: ${e.message ?? e.code}');
-  } catch (e) {
-    if (!mounted) return;
-
-    _addOutput('UNEXPECTED ERROR: $e');
+    _addOutput('');
   }
-
-  if (!mounted) return;
-
-  _addOutput('');
-}
 
   @override
   Widget build(BuildContext context) {
@@ -138,23 +194,42 @@ class _CommandTerminalScreenState
   }
 
   Widget _buildStatusBar() {
+    final Color statusColor;
+
+    switch (_engineStatus) {
+      case 'READY':
+        statusColor = Colors.lightGreenAccent;
+        break;
+      case 'OFFLINE':
+        statusColor = Colors.redAccent;
+        break;
+      default:
+        statusColor = Colors.orangeAccent;
+    }
+
+    final statusLabel = switch (_engineStatus) {
+      'READY' => 'ENGINE READY',
+      'OFFLINE' => 'ENGINE OFFLINE',
+      _ => 'CHECKING ENGINE',
+    };
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       color: const Color(0xFF172638),
       child: Row(
         children: [
-          const Icon(
+          Icon(
             Icons.circle,
-            color: Colors.orangeAccent,
+            color: statusColor,
             size: 10,
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'ENGINE NOT CONNECTED',
+              statusLabel,
               style: TextStyle(
-                color: Colors.orangeAccent,
+                color: statusColor,
                 fontSize: 11,
                 fontWeight: FontWeight.bold,
               ),
@@ -196,9 +271,7 @@ class _CommandTerminalScreenState
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const Icon(
-                  Icons.arrow_drop_down,
-                ),
+                const Icon(Icons.arrow_drop_down),
               ],
             ),
           ),
@@ -217,13 +290,10 @@ class _CommandTerminalScreenState
         itemCount: _terminalOutput.length,
         itemBuilder: (context, index) {
           final line = _terminalOutput[index];
-
           final isCommand = line.startsWith('> ');
 
           return Padding(
-            padding: const EdgeInsets.symmetric(
-              vertical: 3,
-            ),
+            padding: const EdgeInsets.symmetric(vertical: 3),
             child: Text(
               line,
               style: TextStyle(
