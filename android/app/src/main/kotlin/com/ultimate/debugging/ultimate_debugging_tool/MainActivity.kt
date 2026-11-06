@@ -627,6 +627,172 @@ class MainActivity : FlutterActivity() {
     }
 }
 
+        private fun executeTerminalCommand(
+        call: io.flutter.plugin.common.MethodCall,
+        result: MethodChannel.Result,
+        requireRoot: Boolean
+    ) {
+        val command = call.argument<String>("command")?.trim()
+
+        if (command.isNullOrBlank()) {
+            result.error(
+                "INVALID_COMMAND",
+                "Enter a command first.",
+                null
+            )
+            return
+        }
+
+        val allowedCommands = setOf(
+            "help",
+            "id",
+            "whoami",
+            "uname -a",
+            "getprop",
+            "df -h",
+            "cat /proc/meminfo",
+            "dumpsys battery",
+            "pm list packages"
+        )
+
+        if (command !in allowedCommands) {
+            result.error(
+                "COMMAND_NOT_ALLOWED",
+                "This command is not yet enabled. Type help to see the supported commands.",
+                null
+            )
+            return
+        }
+
+        if (command == "help") {
+            result.success(
+                """
+                ULTIMATE DEBUGGING TOOL
+                ${if (requireRoot) "ROOT MODE" else "ADB MODE"}
+
+                Available diagnostic commands:
+
+                help
+                id
+                whoami
+                uname -a
+                getprop
+                df -h
+                cat /proc/meminfo
+                dumpsys battery
+                pm list packages
+
+                Only approved read-only diagnostic commands are enabled.
+                """.trimIndent()
+            )
+            return
+        }
+
+        terminalExecutor.execute {
+            try {
+                val usbConnected =
+                    adbConnection?.isConnected() == true
+
+                val wirelessConnected =
+                    wirelessStatus == "CONNECTED" &&
+                    wirelessManager != null
+
+                if (usbConnected && wirelessConnected) {
+                    throw IOException(
+                        "Both USB and Wireless ADB are connected. Disconnect one connection first."
+                    )
+                }
+
+                if (!usbConnected && !wirelessConnected) {
+                    throw IOException(
+                        "No authenticated ADB connection. Connect a device using USB or Wireless ADB first."
+                    )
+                }
+
+                fun executeAdbShell(
+                    shellCommand: String
+                ): AdbShellSession.CommandResult {
+                    return if (usbConnected) {
+                        adbConnection!!
+                            .createShellSession()
+                            .execute(shellCommand, 30000L)
+                    } else {
+                        wirelessManager!!
+                            .executeCommand(shellCommand, 30000L)
+                    }
+                }
+
+                fun shellQuote(value: String): String {
+                    return "'" + value.replace(
+                        "'",
+                        "'\\''"
+                    ) + "'"
+                }
+
+                if (requireRoot) {
+                    val rootCheck = executeAdbShell(
+                        "su -c ${shellQuote("id")}"
+                    )
+
+                    if (
+                        rootCheck.exitCode != 0 ||
+                        !rootCheck.output.contains("uid=0")
+                    ) {
+                        throw IOException(
+                            "Root access was not granted. This device may not be rooted, or the root permission request was denied."
+                        )
+                    }
+                }
+
+                val shellCommand = if (requireRoot) {
+                    "su -c ${shellQuote(command)}"
+                } else {
+                    command
+                }
+
+                val commandResult =
+                    executeAdbShell(shellCommand)
+
+                val output = buildString {
+                    append(commandResult.output)
+
+                    if (commandResult.errorOutput.isNotBlank()) {
+                        if (isNotEmpty()) append("\n")
+                        append("ERROR:\n")
+                        append(commandResult.errorOutput)
+                    }
+
+                    if (commandResult.exitCode != null) {
+                        if (isNotEmpty()) append("\n\n")
+                        append("Exit code: ")
+                        append(commandResult.exitCode)
+                    }
+                }.ifBlank {
+                    "Command completed without output."
+                }
+
+                mainHandler.post {
+                    result.success(output)
+                }
+
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Terminal command execution failed",
+                    e
+                )
+
+                mainHandler.post {
+                    result.error(
+                        "TERMINAL_EXECUTION_ERROR",
+                        e.message ?: "Terminal command failed.",
+                        null
+                    )
+                }
+            }
+        }
+    }
+
     private fun connectAdb(
         call: io.flutter.plugin.common.MethodCall,
         result: MethodChannel.Result
