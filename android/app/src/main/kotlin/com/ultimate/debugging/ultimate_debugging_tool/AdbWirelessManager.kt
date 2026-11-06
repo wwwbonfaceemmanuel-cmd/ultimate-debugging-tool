@@ -118,14 +118,16 @@ class AdbWirelessManager(
         connectionInfo = null
 
         try {
-            previousConnection?.close()
-        } catch (_: Exception) {
-            try {
-                previousTransport?.close()
-            } catch (_: Exception) {
-                // Continue with the new connection attempt.
-            }
-        }
+    previousConnection?.close()
+} catch (_: Exception) {
+    // Continue with transport cleanup.
+}
+
+try {
+    previousTransport?.close()
+} catch (_: Exception) {
+    // Continue with the new connection attempt.
+}
 
         cancelled.set(false)
 
