@@ -25,7 +25,7 @@ class AdbUsbTransport(
 
     companion object {
         private const val WRITE_TIMEOUT_MS = 5000
-        private const val READ_TIMEOUT_MS = 0
+        private const val READ_TIMEOUT_MS = 1000
         private const val MAX_TRANSFER_CHUNK = 16384
     }
 
