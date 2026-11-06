@@ -205,14 +205,16 @@ class AdbWirelessManager(
             val finalInfo = when (result) {
 
                 is AdbConnection.HandshakeResult.Connected -> {
-                    retainConnection = true
+    retainConnection = true
 
-                    ConnectionInfo(
-                        host = host,
-                        port = port,
-                        state = AdbConnection.State.CONNECTED
-                    )
-                }
+    ConnectionInfo(
+        host = host,
+        port = port,
+        state = AdbConnection.State.CONNECTED,
+        deviceBanner = result.deviceBanner,
+        features = result.features
+    )
+}
 
                 is AdbConnection.HandshakeResult.AuthenticationRequired -> {
                     retainConnection = true
