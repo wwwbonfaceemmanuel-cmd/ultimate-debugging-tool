@@ -519,7 +519,7 @@ class AdbConnection(
      * Indicates whether the ADB connection is established.
      */
     fun isConnected(): Boolean {
-        return state == State.CONNECTED
+    return !cancelled && state == State.CONNECTED
     }
 
     /**
