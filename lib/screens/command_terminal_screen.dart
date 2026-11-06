@@ -63,19 +63,53 @@ class _CommandTerminalScreenState
     });
   }
 
-  void _submitCommand() {
-    final command = _commandController.text.trim();
+  Future<void> _submitCommand() async {
+  final command = _commandController.text.trim();
 
-    if (command.isEmpty) return;
+  if (command.isEmpty) return;
 
-    _addOutput('> $command');
+  _commandController.clear();
+
+  if (command.toLowerCase() == 'clear') {
+    _clearTerminal();
+    return;
+  }
+
+  _addOutput('> $command');
+
+  if (_executionMode != 'STANDARD ANDROID') {
     _addOutput(
-      'Command execution is not connected yet.',
+      'This execution mode is not connected yet.',
     );
     _addOutput('');
-
-    _commandController.clear();
+    return;
   }
+
+  try {
+    final output = await _terminalChannel.invokeMethod<String>(
+      'executeStandardDiagnostic',
+      {
+        'command': command,
+      },
+    );
+
+    if (!mounted) return;
+
+    _addOutput(output ?? 'No output returned.');
+  } on PlatformException catch (e) {
+    if (!mounted) return;
+
+    _addOutput('ERROR: ${e.message ?? e.code}');
+  } catch (e) {
+    if (!mounted) return;
+
+    _addOutput('UNEXPECTED ERROR: $e');
+  }
+
+  if (!mounted) return;
+
+  _addOutput('');
+}
 
   @override
   Widget build(BuildContext context) {
