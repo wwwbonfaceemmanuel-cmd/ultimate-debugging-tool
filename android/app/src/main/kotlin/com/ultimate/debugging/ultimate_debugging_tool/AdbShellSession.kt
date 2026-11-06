@@ -1,3 +1,4 @@
+
 package com.ultimate.debugging.ultimate_debugging_tool
 
 import java.io.ByteArrayOutputStream
@@ -17,11 +18,14 @@ import java.util.concurrent.atomic.AtomicInteger
  * Supports:
  * - Modern shell_v2 protocol.
  * - Legacy shell protocol.
- * - Standard output.
- * - Standard error.
+ * - Standard output and standard error.
  * - Exit codes when supported.
  *
- * Only one command is executed at a time by each session.
+ * Only one command is executed at a time per session.
+ *
+ * A failed command invalidates this session. The owner must
+ * disconnect and establish a fresh ADB connection before
+ * executing another command.
  */
 class AdbShellSession(
     private val transport: AdbTransport,
@@ -43,6 +47,7 @@ class AdbShellSession(
         private const val CHANNEL_EXIT = 3
 
         private const val DEFAULT_TIMEOUT_MS = 30000L
+        private const val PACKET_POLL_INTERVAL_MS = 200L
         private const val MIN_LOCAL_ID = 1
     }
 
@@ -54,6 +59,9 @@ class AdbShellSession(
 
     @Volatile
     private var readerFailure: IOException? = null
+
+    @Volatile
+    private var sessionFailure: IOException? = null
 
     private val writeLock = Any()
     private val commandLock = Any()
@@ -68,6 +76,12 @@ class AdbShellSession(
         start()
     }
 
+    init {
+        require(maxDataSize > 0) {
+            "ADB maximum data size must be positive."
+        }
+    }
+
     /**
      * Continuously reads packets from the transport.
      *
@@ -75,25 +89,25 @@ class AdbShellSession(
      * after the shell session has been created.
      */
     private fun readIncomingPackets() {
-    try {
-        while (!closed.get()) {
-            val packet = transport.readPacket()
+        try {
+            while (!closed.get()) {
+                val packet = transport.readPacket()
 
-            if (closed.get()) {
-                break
+                if (closed.get()) {
+                    break
+                }
+
+                incomingPackets.put(packet)
             }
-
-            incomingPackets.put(packet)
-        }
-    } catch (error: Exception) {
-        if (!closed.get()) {
-            readerFailure = IOException(
-                "ADB shell reader failed: ${error.message}",
-                error
-            )
+        } catch (error: Exception) {
+            if (!closed.get()) {
+                readerFailure = IOException(
+                    "ADB shell reader failed: ${error.message}",
+                    error
+                )
+            }
         }
     }
-}
 
     /**
      * Executes one command on the connected Android device.
@@ -105,7 +119,6 @@ class AdbShellSession(
     ): CommandResult {
 
         synchronized(commandLock) {
-
             checkSessionOpen()
 
             if (command.isBlank()) {
@@ -113,7 +126,9 @@ class AdbShellSession(
             }
 
             if (timeoutMs <= 0) {
-                throw IOException("Command timeout must be positive.")
+                throw IOException(
+                    "Command timeout must be positive."
+                )
             }
 
             val localId = nextLocalId.getAndIncrement()
@@ -134,19 +149,33 @@ class AdbShellSession(
                 )
             }
 
-            sendPacket(
-                AdbProtocol.AdbPacket(
-                    command = AdbProtocol.CMD_OPEN,
-                    arg0 = localId,
-                    arg1 = 0,
-                    data = serviceBytes
+            try {
+                sendPacket(
+                    AdbProtocol.AdbPacket(
+                        command = AdbProtocol.CMD_OPEN,
+                        arg0 = localId,
+                        arg1 = 0,
+                        data = serviceBytes
+                    )
                 )
-            )
 
-            return receiveCommandResult(
-                localId = localId,
-                timeoutMs = timeoutMs
-            )
+                return receiveCommandResult(
+                    localId = localId,
+                    timeoutMs = timeoutMs
+                )
+            } catch (error: Exception) {
+                val failure = if (error is IOException) {
+                    error
+                } else {
+                    IOException(
+                        "ADB command execution failed: ${error.message}",
+                        error
+                    )
+                }
+
+                invalidateSession(failure)
+                throw failure
+            }
         }
     }
 
@@ -164,7 +193,6 @@ class AdbShellSession(
 
         val stdout = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()
-
         val shellV2Buffer = ByteArrayOutputStream()
 
         var exitCode: Int? = null
@@ -174,9 +202,7 @@ class AdbShellSession(
                 TimeUnit.MILLISECONDS.toNanos(timeoutMs)
 
         try {
-
             while (!streamClosed) {
-
                 checkSessionOpen()
 
                 val remainingNanos =
@@ -189,42 +215,40 @@ class AdbShellSession(
                 }
 
                 readerFailure?.let { failure ->
-    throw failure
-}
+                    throw failure
+                }
 
-val waitNanos = minOf(
-    remainingNanos,
-    TimeUnit.MILLISECONDS.toNanos(200)
-)
+                val waitNanos = minOf(
+                    remainingNanos,
+                    TimeUnit.MILLISECONDS.toNanos(
+                        PACKET_POLL_INTERVAL_MS
+                    )
+                )
 
-val packet = incomingPackets.poll(
-    waitNanos,
-    TimeUnit.NANOSECONDS
-)
+                val packet = incomingPackets.poll(
+                    waitNanos,
+                    TimeUnit.NANOSECONDS
+                )
 
-if (packet == null) {
-    readerFailure?.let { failure ->
-        throw failure
-    }
+                if (packet == null) {
+                    readerFailure?.let { failure ->
+                        throw failure
+                    }
 
-    continue
-}
+                    continue
+                }
 
                 when (packet.command) {
 
                     AdbProtocol.CMD_OKAY -> {
-
                         if (packet.arg1 != localId) {
                             continue
                         }
 
                         if (!streamOpened) {
-
                             remoteId = packet.arg0
                             streamOpened = true
-
                         } else if (remoteId != packet.arg0) {
-
                             throw IOException(
                                 "Received an ADB acknowledgement for an unexpected stream."
                             )
@@ -232,7 +256,6 @@ if (packet == null) {
                     }
 
                     AdbProtocol.CMD_WRTE -> {
-
                         if (!streamOpened ||
                             packet.arg0 != remoteId ||
                             packet.arg1 != localId
@@ -241,19 +264,16 @@ if (packet == null) {
                         }
 
                         if (supportsShellV2) {
-
                             processShellV2Data(
-                                packet.data,
-                                shellV2Buffer,
-                                stdout,
-                                stderr,
-                                { code ->
+                                incoming = packet.data,
+                                buffer = shellV2Buffer,
+                                stdout = stdout,
+                                stderr = stderr,
+                                onExitCode = { code ->
                                     exitCode = code
                                 }
                             )
-
                         } else {
-
                             stdout.write(packet.data)
                         }
 
@@ -267,24 +287,29 @@ if (packet == null) {
                     }
 
                     AdbProtocol.CMD_CLSE -> {
-
-                        if (packet.arg1 == localId &&
-                            (remoteId == null ||
-                                packet.arg0 == remoteId)
-                        ) {
-
-                            if (remoteId != null) {
-                                sendPacket(
-                                    AdbProtocol.AdbPacket(
-                                        command = AdbProtocol.CMD_CLSE,
-                                        arg0 = localId,
-                                        arg1 = remoteId!!
-                                    )
-                                )
-                            }
-
-                            streamClosed = true
+                        if (packet.arg1 != localId) {
+                            continue
                         }
+
+                        if (remoteId != null &&
+                            packet.arg0 != remoteId
+                        ) {
+                            continue
+                        }
+
+                        if (remoteId == null) {
+                            remoteId = packet.arg0
+                        }
+
+                        sendPacket(
+                            AdbProtocol.AdbPacket(
+                                command = AdbProtocol.CMD_CLSE,
+                                arg0 = localId,
+                                arg1 = remoteId!!
+                            )
+                        )
+
+                        streamClosed = true
                     }
 
                     AdbProtocol.CMD_CNXN -> {
@@ -307,18 +332,31 @@ if (packet == null) {
                 )
             }
 
-              return CommandResult(
-                output = stdout.toString(StandardCharsets.UTF_8.name()),
-                errorOutput = stderr.toString(StandardCharsets.UTF_8.name()),
+            if (supportsShellV2 && shellV2Buffer.size() > 0) {
+                throw IOException(
+                    "The device closed the shell with an incomplete shell_v2 frame."
+                )
+            }
+
+            return CommandResult(
+                output = stdout.toString(
+                    StandardCharsets.UTF_8.name()
+                ),
+                errorOutput = stderr.toString(
+                    StandardCharsets.UTF_8.name()
+                ),
                 exitCode = exitCode,
                 usedShellV2 = supportsShellV2
             )
 
         } catch (error: InterruptedException) {
-
             Thread.currentThread().interrupt()
 
-            closeFailedStream(localId, remoteId, streamClosed)
+            closeFailedStream(
+                localId,
+                remoteId,
+                streamClosed
+            )
 
             throw IOException(
                 "ADB command execution was interrupted.",
@@ -326,44 +364,47 @@ if (packet == null) {
             )
 
         } catch (error: Exception) {
+            closeFailedStream(
+                localId,
+                remoteId,
+                streamClosed
+            )
 
-            closeFailedStream(localId, remoteId, streamClosed)
-
-            throw if (error is IOException) {
-                error
-            } else {
-                IOException(
-                    "ADB command execution failed: ${error.message}",
-                    error
-                )
+            if (error is IOException) {
+                throw error
             }
+
+            throw IOException(
+                "ADB command execution failed: ${error.message}",
+                error
+            )
         }
     }
 
     /**
- * Closes an unfinished shell stream after command failure.
- */
-private fun closeFailedStream(
-    localId: Int,
-    remoteId: Int?,
-    streamClosed: Boolean
-) {
-    if (remoteId == null || streamClosed) {
-        return
-    }
+     * Closes an unfinished shell stream after command failure.
+     */
+    private fun closeFailedStream(
+        localId: Int,
+        remoteId: Int?,
+        streamClosed: Boolean
+    ) {
+        if (remoteId == null || streamClosed) {
+            return
+        }
 
-    try {
-        sendPacket(
-            AdbProtocol.AdbPacket(
-                command = AdbProtocol.CMD_CLSE,
-                arg0 = localId,
-                arg1 = remoteId
+        try {
+            sendPacket(
+                AdbProtocol.AdbPacket(
+                    command = AdbProtocol.CMD_CLSE,
+                    arg0 = localId,
+                    arg1 = remoteId
+                )
             )
-        )
-    } catch (_: Exception) {
-        // The connection may already be unavailable.
+        } catch (_: Exception) {
+            // The connection may already be unavailable.
+        }
     }
-}
 
     /**
      * Decodes shell_v2 channel frames.
@@ -382,14 +423,12 @@ private fun closeFailedStream(
         stderr: ByteArrayOutputStream,
         onExitCode: (Int) -> Unit
     ) {
-
         buffer.write(incoming)
 
-        var data = buffer.toByteArray()
+        val data = buffer.toByteArray()
         var offset = 0
 
         while (data.size - offset >= 5) {
-
             val channel = data[offset].toInt() and 0xFF
 
             val length = ByteBuffer
@@ -397,7 +436,9 @@ private fun closeFailedStream(
                 .order(ByteOrder.LITTLE_ENDIAN)
                 .int
 
-            if (length < 0 || length > AdbProtocol.MAX_DATA_SIZE) {
+            if (length < 0 ||
+                length > AdbProtocol.MAX_DATA_SIZE
+            ) {
                 throw IOException(
                     "Invalid ADB shell_v2 frame length."
                 )
@@ -415,7 +456,6 @@ private fun closeFailedStream(
             )
 
             when (channel) {
-
                 CHANNEL_STDIN -> {
                     // No stdin data is expected for these commands.
                 }
@@ -429,7 +469,6 @@ private fun closeFailedStream(
                 }
 
                 CHANNEL_EXIT -> {
-
                     if (payload.isNotEmpty()) {
                         onExitCode(
                             payload[0].toInt() and 0xFF
@@ -464,31 +503,49 @@ private fun closeFailedStream(
     private fun sendPacket(
         packet: AdbProtocol.AdbPacket
     ) {
-
         checkSessionOpen()
 
         synchronized(writeLock) {
-
             checkSessionOpen()
-
             transport.writePacket(packet)
         }
     }
 
     /**
-     * Prevents operations on a closed session.
+     * Marks the session unusable after a command failure.
+     *
+     * The owning ADB connection must be disconnected and
+     * re-established before another command can run.
      */
-    private fun checkSessionOpen() {
-    if (closed.get()) {
-        throw IOException(
-            "ADB shell session is closed."
-        )
+    private fun invalidateSession(error: IOException) {
+        if (sessionFailure == null) {
+            sessionFailure = error
+        }
+
+        readerThread.interrupt()
     }
 
-    readerFailure?.let { failure ->
-        throw failure
+    /**
+     * Prevents operations on a closed or failed session.
+     */
+    private fun checkSessionOpen() {
+        if (closed.get()) {
+            throw IOException(
+                "ADB shell session is closed."
+            )
+        }
+
+        sessionFailure?.let { failure ->
+            throw IOException(
+                "ADB shell session is no longer usable. Disconnect and reconnect ADB.",
+                failure
+            )
+        }
+
+        readerFailure?.let { failure ->
+            throw failure
+        }
     }
-}
 
     /**
      * Stops the shell reader.
@@ -497,13 +554,11 @@ private fun closeFailedStream(
      * for closing the underlying transport.
      */
     override fun close() {
-
         if (!closed.compareAndSet(false, true)) {
             return
         }
 
         readerThread.interrupt()
-
         incomingPackets.clear()
     }
 }
