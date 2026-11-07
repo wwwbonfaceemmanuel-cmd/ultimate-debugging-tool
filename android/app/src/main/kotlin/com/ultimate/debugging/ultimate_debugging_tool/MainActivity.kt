@@ -661,10 +661,12 @@ override fun configureFlutterEngine(
                     "$it: ${readPartition(path)}"
                 }
 
-                val assessment = mutableListOf<String>()
+                               val assessment = mutableListOf<String>()
 
                 if (memoryInfo.lowMemory) {
-                    assessment.add("Android reports low memory conditions.")
+                    assessment.add(
+                        "Android reports low memory conditions."
+                    )
                 }
 
                 if (selinuxStatus == "Permissive") {
@@ -673,18 +675,45 @@ override fun configureFlutterEngine(
                     )
                 }
 
-                if (verifiedBootState == "orange") {
-                    assessment.add(
-                        "Verified Boot reports an unlocked or modified boot state."
+                when (verifiedBootState.lowercase()) {
+                    "orange" -> assessment.add(
+                        "WARNING: Verified Boot reports an unlocked bootloader."
                     )
+
+                    "red" -> assessment.add(
+                        "CRITICAL: Verified Boot reports a verification failure."
+                    )
+
+                    "yellow" -> assessment.add(
+                        "NOTICE: Verified Boot reports a custom trust key."
+                    )
+                }
+
+                when (flashLocked) {
+                    "0" -> assessment.add(
+                        "WARNING: Bootloader lock property reports unlocked."
+                    )
+
+                    "1" -> {
+                        // Bootloader lock property reports locked.
+                    }
+                }
+
+                when (vbmetaState.lowercase()) {
+                    "unlocked" -> assessment.add(
+                        "WARNING: VBMeta reports an unlocked device state."
+                    )
+
+                    "locked" -> {
+                        // VBMeta reports a locked device state.
+                    }
                 }
 
                 if (assessment.isEmpty()) {
                     assessment.add(
-                        "No immediate abnormal condition detected from available readings."
+                        "No immediate abnormal condition detected from available readings. Some security properties may be restricted or unavailable."
                     )
                 }
-
                 """
                 ADVANCED DEVICE, SOFTWARE AND FIRMWARE REPORT
 
