@@ -19,7 +19,13 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
   final Set<int> _completedSteps = {};
   final Map<String, String> _diagnosticResults = {};
 
+  final TextEditingController _packageController =
+      TextEditingController();
+
   bool _isRunningDiagnostics = false;
+  bool _isRepairing = false;
+  String? _repairMessage;
+  bool? _repairSucceeded;
 
   static const List<RepairGuide> _guides = [
     RepairGuide(
@@ -49,11 +55,7 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
         'Update applications that are causing problems.',
         'Review recently installed applications.',
       ],
-      diagnosticCommands: [
-        'memory',
-        'storage',
-        'uptime',
-      ],
+      diagnosticCommands: ['memory', 'storage', 'uptime'],
       risk: 'LOW',
     ),
     RepairGuide(
@@ -83,9 +85,7 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
         'Restrict unnecessary background activity.',
         'Seek battery inspection if physical damage or swelling is suspected.',
       ],
-      diagnosticCommands: [
-        'battery',
-      ],
+      diagnosticCommands: ['battery'],
       risk: 'LOW',
     ),
     RepairGuide(
@@ -114,9 +114,7 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
         'Remove only files confirmed to be unnecessary.',
         'Review application storage before clearing anything.',
       ],
-      diagnosticCommands: [
-        'storage',
-      ],
+      diagnosticCommands: ['storage'],
       risk: 'MEDIUM',
     ),
     RepairGuide(
@@ -146,10 +144,7 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
         'Restart the application.',
         'Consider clearing cache only after explaining the consequences.',
       ],
-      diagnosticCommands: [
-        'memory',
-        'storage',
-      ],
+      diagnosticCommands: ['memory', 'storage'],
       risk: 'MEDIUM',
     ),
     RepairGuide(
@@ -209,10 +204,7 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
         'Record the exact startup error or behaviour.',
         'Escalate firmware and hardware problems for specialist assessment.',
       ],
-      diagnosticCommands: [
-        'device-info',
-        'uptime',
-      ],
+      diagnosticCommands: ['device-info', 'uptime'],
       risk: 'HIGH',
     ),
   ];
@@ -225,12 +217,16 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
     'uptime': 'Device uptime',
   };
 
+  @override
+  void dispose() {
+    _packageController.dispose();
+    super.dispose();
+  }
+
   Future<void> _runAvailableDiagnostics(
     RepairGuide guide,
   ) async {
-    if (guide.diagnosticCommands.isEmpty) {
-      return;
-    }
+    if (guide.diagnosticCommands.isEmpty) return;
 
     setState(() {
       _isRunningDiagnostics = true;
@@ -277,12 +273,121 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
     }
   }
 
+  Future<void> _executeForceStop() async {
+    final packageName = _packageController.text.trim();
+
+    if (packageName.isEmpty) {
+      setState(() {
+        _repairMessage = 'Enter the target application package name.';
+        _repairSucceeded = false;
+      });
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF172638),
+        title: const Text(
+          'Confirm application force-stop',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          'You are about to force-stop:\n\n'
+          '$packageName\n\n'
+          'This closes the application on the connected device. '
+          'Unsaved work inside that application may be lost. '
+          'This operation does not clear application data and '
+          'does not automatically relaunch the application.\n\n'
+          'Continue only if this is the correct package.',
+          style: const TextStyle(
+            color: Colors.white70,
+            height: 1.5,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, false),
+            child: const Text('CANCEL'),
+          ),
+          ElevatedButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+            ),
+            child: const Text('CONFIRM FORCE-STOP'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _isRepairing = true;
+      _repairMessage = null;
+      _repairSucceeded = null;
+    });
+
+    try {
+      final response =
+          await _diagnosticChannel.invokeMapMethod<String, dynamic>(
+        'executeRepairCommand',
+        {
+          'operation': 'force-stop-app',
+          'packageName': packageName,
+          'confirmed': true,
+        },
+      );
+
+      if (!mounted) return;
+
+      final success = response?['success'] == true;
+
+      setState(() {
+        _repairSucceeded = success;
+        _repairMessage = success
+            ? '${response?['message'] ?? 'Force-stop completed.'}\n\n'
+                'Verification: ${response?['verification'] ?? 'Reopen the app and test it.'}'
+            : 'The repair operation did not report success.';
+      });
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _repairSucceeded = false;
+        _repairMessage =
+            '${error.message ?? error.code}\n\n'
+            'Check the target connection and package name.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+
+      setState(() {
+        _repairSucceeded = false;
+        _repairMessage = 'Repair failed: $error';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRepairing = false;
+        });
+      }
+    }
+  }
+
   void _selectGuide(int index) {
     setState(() {
       _selectedIndex = index;
       _completedSteps.clear();
       _diagnosticResults.clear();
+      _packageController.clear();
+      _repairMessage = null;
+      _repairSucceeded = null;
       _isRunningDiagnostics = false;
+      _isRepairing = false;
     });
   }
 
@@ -505,9 +610,7 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
                   decoration: BoxDecoration(
                     color: const Color(0xFF0D1928),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: Colors.white12,
-                    ),
+                    border: Border.all(color: Colors.white12),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -548,6 +651,117 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
     );
   }
 
+  Widget _buildForceStopSection() {
+    return Card(
+      color: const Color(0xFF172638),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.stop_circle_outlined,
+                  color: Colors.orangeAccent,
+                ),
+                SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Controlled application repair',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Force-stop is available for eligible user applications '
+              'on an authenticated ADB-connected target phone. '
+              'System applications are rejected by the native repair '
+              'engine.',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _packageController,
+              enabled: !_isRepairing,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                labelText: 'Target application package name',
+                hintText: 'com.example.application',
+                labelStyle: TextStyle(color: Colors.white70),
+                hintStyle: TextStyle(color: Colors.white38),
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isRepairing
+                    ? null
+                    : _executeForceStop,
+                icon: _isRepairing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.stop_circle_outlined),
+                label: Text(
+                  _isRepairing
+                      ? 'Executing repair...'
+                      : 'Force-stop target application',
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade800,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+            if (_repairMessage != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D1928),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _repairSucceeded == true
+                        ? Colors.greenAccent
+                        : Colors.orangeAccent,
+                  ),
+                ),
+                child: Text(
+                  _repairMessage!,
+                  style: TextStyle(
+                    color: _repairSucceeded == true
+                        ? Colors.greenAccent
+                        : Colors.orangeAccent,
+                    fontSize: 12,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildGuideDetails(RepairGuide guide) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -581,9 +795,7 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
                 const SizedBox(height: 12),
                 Text(
                   guide.description,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                  ),
+                  style: const TextStyle(color: Colors.white70),
                 ),
                 const SizedBox(height: 14),
                 Row(
@@ -608,6 +820,8 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
           Icons.report_problem_outlined,
         ),
         _buildDeviceDiagnostics(guide),
+        if (guide.title == 'Applications crashing')
+          _buildForceStopSection(),
         _buildChecklist(guide.checks),
         _buildBulletSection(
           'Possible causes',
@@ -624,11 +838,10 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
           child: const Padding(
             padding: EdgeInsets.all(14),
             child: Text(
-              'IMPORTANT: Diagnostic results provide '
-              'information for technician review. They do not '
-              'automatically identify every fault or perform '
-              'repairs. Back up user data before any '
-              'data-affecting operation.',
+              'IMPORTANT: Diagnostic results provide information '
+              'for technician review. They do not automatically '
+              'identify every fault or perform repairs. Back up '
+              'user data before any data-affecting operation.',
               style: TextStyle(
                 color: Colors.orangeAccent,
                 height: 1.5,
@@ -716,13 +929,16 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
-                      onPressed: _isRunningDiagnostics
+                      onPressed: _isRunningDiagnostics || _isRepairing
                           ? null
                           : () {
                               setState(() {
                                 _selectedIndex = null;
                                 _completedSteps.clear();
                                 _diagnosticResults.clear();
+                                _packageController.clear();
+                                _repairMessage = null;
+                                _repairSucceeded = null;
                               });
                             },
                       icon: const Icon(Icons.arrow_back),
