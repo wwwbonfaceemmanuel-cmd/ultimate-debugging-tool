@@ -496,12 +496,11 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
             'Check the target connection and package name.';
       });
 
-     await _saveRepairHistory(
+    await _saveRepairHistory(
         operation: 'Force-stop application: $packageName',
         category: 'ADB application repair',
-        result: success ? 'Success' : 'Failed',
-        details:
-            _repairMessage ?? 'No repair details were returned.',
+        result: 'Failed',
+        details: _repairMessage ?? 'ADB repair failed.',
       );
       
     } catch (error) {
