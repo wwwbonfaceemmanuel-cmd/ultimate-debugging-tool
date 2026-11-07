@@ -418,8 +418,69 @@ override fun configureFlutterEngine(
                 result.success(getWirelessAdbStatus())
             }
 
-            "disconnectWirelessAdb" -> {
+                        "disconnectWirelessAdb" -> {
                 disconnectWirelessAdb(result)
+            }
+
+            "saveRepairHistory" -> {
+                try {
+                    val operation =
+                        call.argument<String>("operation") ?: ""
+
+                    val category =
+                        call.argument<String>("category") ?: "General"
+
+                    val repairResult =
+                        call.argument<String>("result") ?: "Unknown"
+
+                    val details =
+                        call.argument<String>("details") ?: ""
+
+                    val saved = RepairHistoryStore.save(
+                        this,
+                        operation,
+                        category,
+                        repairResult,
+                        details
+                    )
+
+                    result.success(saved)
+
+                } catch (e: Exception) {
+                    result.error(
+                        "HISTORY_SAVE_ERROR",
+                        e.message ?: "Unable to save repair history.",
+                        null
+                    )
+                }
+            }
+
+            "getRepairHistory" -> {
+                try {
+                    result.success(
+                        RepairHistoryStore.getAll(this)
+                    )
+                } catch (e: Exception) {
+                    result.error(
+                        "HISTORY_READ_ERROR",
+                        e.message ?: "Unable to retrieve repair history.",
+                        null
+                    )
+                }
+            }
+
+            "clearRepairHistory" -> {
+                try {
+                    result.success(
+                        RepairHistoryStore.clear(this)
+                    )
+                } catch (e: Exception) {
+                    result.error(
+                        "HISTORY_CLEAR_ERROR",
+                        e.message ?: "Unable to clear repair history.",
+                        null
+                    )
+                }
             }
 
             else -> result.notImplemented()
