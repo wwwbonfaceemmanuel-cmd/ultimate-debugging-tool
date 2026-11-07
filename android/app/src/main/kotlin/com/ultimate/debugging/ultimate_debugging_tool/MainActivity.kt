@@ -2098,18 +2098,22 @@ override fun configureFlutterEngine(
                         as android.media.AudioManager
 
                 val audioDevices =
-                    if (Build.VERSION.SDK_INT >= 23) {
-                        audioManager.getDevices(
-                            android.media.AudioManager.GET_DEVICES_ALL
-                        ).joinToString("\n") {
-                            "${it.productName} | Type: ${it.type} | Source: ${it.isSource} | Sink: ${it.isSink}"
+                    try {
+                        if (Build.VERSION.SDK_INT >= 23) {
+                            audioManager.getDevices(
+                                android.media.AudioManager.GET_DEVICES_ALL
+                            ).joinToString("\n") {
+                                "${it.productName} | Type: ${it.type} | Source: ${it.isSource} | Sink: ${it.isSink}"
+                            }.ifBlank {
+                                "No audio devices exposed."
+                            }
+                        } else {
+                            "Audio device enumeration unsupported."
                         }
-                    } else {
-                        "Audio device enumeration unsupported."
-                    }.ifBlank {
-                        "No audio devices exposed."
+                    } catch (e: Exception) {
+                        "Audio device information unavailable: ${e.message}"
                     }
-
+                    
                 // DISPLAY AND TOUCH
 
                 val displayMetrics =
