@@ -486,6 +486,12 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
                 '${response?['verification'] ?? 'Reopen the app and test it.'}'
             : '${response?['message'] ?? 'The repair operation did not report success.'}';
       });
+      await _saveRepairHistory(
+        operation: 'Force-stop application: $packageName',
+        category: 'ADB application repair',
+        result: success ? 'Success' : 'Failed',
+        details: _repairMessage ?? 'No repair details were returned.',
+      );
     } on PlatformException catch (error) {
       if (!mounted) return;
 
