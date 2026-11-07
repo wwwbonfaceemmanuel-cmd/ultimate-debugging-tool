@@ -119,6 +119,17 @@ class DashboardScreen extends StatelessWidget {
           const RepairToolsScreen(),
         ),
       ),
+            ToolItem(
+        title: 'Repair History',
+        description: 'Review saved diagnostic checks and repair results.',
+        icon: Icons.history,
+        color: Colors.lightBlueAccent,
+        onTap: () => _openScreen(
+          context,
+          const RepairHistoryScreen(),
+        ),
+      ),
+      
       ToolItem(
         title: 'File Manager',
         description: 'Browse and manage accessible files.',
