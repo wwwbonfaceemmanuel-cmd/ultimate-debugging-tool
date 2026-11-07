@@ -276,6 +276,16 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
                   ? result!.trim()
                   : 'The diagnostic returned no information.';
         });
+       await _saveRepairHistory(
+          operation:
+              '${guide.title} - ${_commandLabels[command] ?? command}',
+          category: 'Self-device diagnostic',
+          result: result?.trim().isNotEmpty == true
+              ? 'Completed'
+              : 'Warning',
+          details: _diagnosticResults[command] ?? '',
+        );
+        
       } on PlatformException catch (error) {
         if (!mounted) return;
 
