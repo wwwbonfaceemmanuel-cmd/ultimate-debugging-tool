@@ -1,4 +1,6 @@
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class RepairToolsScreen extends StatefulWidget {
   const RepairToolsScreen({super.key});
@@ -8,11 +10,16 @@ class RepairToolsScreen extends StatefulWidget {
       _RepairToolsScreenState();
 }
 
-class _RepairToolsScreenState
-    extends State<RepairToolsScreen> {
+class _RepairToolsScreenState extends State<RepairToolsScreen> {
+  static const MethodChannel _diagnosticChannel =
+      MethodChannel('com.ultimate.debugging/usb');
+
   int? _selectedIndex;
 
   final Set<int> _completedSteps = {};
+  final Map<String, String> _diagnosticResults = {};
+
+  bool _isRunningDiagnostics = false;
 
   static const List<RepairGuide> _guides = [
     RepairGuide(
@@ -41,6 +48,11 @@ class _RepairToolsScreenState
         'Close unnecessary running applications.',
         'Update applications that are causing problems.',
         'Review recently installed applications.',
+      ],
+      diagnosticCommands: [
+        'memory',
+        'storage',
+        'uptime',
       ],
       risk: 'LOW',
     ),
@@ -71,6 +83,9 @@ class _RepairToolsScreenState
         'Restrict unnecessary background activity.',
         'Seek battery inspection if physical damage or swelling is suspected.',
       ],
+      diagnosticCommands: [
+        'battery',
+      ],
       risk: 'LOW',
     ),
     RepairGuide(
@@ -98,6 +113,9 @@ class _RepairToolsScreenState
         'Transfer personal media to secure storage.',
         'Remove only files confirmed to be unnecessary.',
         'Review application storage before clearing anything.',
+      ],
+      diagnosticCommands: [
+        'storage',
       ],
       risk: 'MEDIUM',
     ),
@@ -128,6 +146,10 @@ class _RepairToolsScreenState
         'Restart the application.',
         'Consider clearing cache only after explaining the consequences.',
       ],
+      diagnosticCommands: [
+        'memory',
+        'storage',
+      ],
       risk: 'MEDIUM',
     ),
     RepairGuide(
@@ -157,6 +179,7 @@ class _RepairToolsScreenState
         'Restart the phone if necessary.',
         'Back up network settings before considering a network reset.',
       ],
+      diagnosticCommands: [],
       risk: 'LOW',
     ),
     RepairGuide(
@@ -186,14 +209,80 @@ class _RepairToolsScreenState
         'Record the exact startup error or behaviour.',
         'Escalate firmware and hardware problems for specialist assessment.',
       ],
+      diagnosticCommands: [
+        'device-info',
+        'uptime',
+      ],
       risk: 'HIGH',
     ),
   ];
+
+  static const Map<String, String> _commandLabels = {
+    'device-info': 'Device information',
+    'battery': 'Battery information',
+    'storage': 'Internal storage',
+    'memory': 'RAM and memory',
+    'uptime': 'Device uptime',
+  };
+
+  Future<void> _runAvailableDiagnostics(
+    RepairGuide guide,
+  ) async {
+    if (guide.diagnosticCommands.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _isRunningDiagnostics = true;
+      _diagnosticResults.clear();
+    });
+
+    for (final command in guide.diagnosticCommands) {
+      try {
+        final result =
+            await _diagnosticChannel.invokeMethod<String>(
+          'executeStandardDiagnostic',
+          {'command': command},
+        );
+
+        if (!mounted) return;
+
+        setState(() {
+          _diagnosticResults[command] =
+              result?.trim().isNotEmpty == true
+                  ? result!.trim()
+                  : 'The diagnostic returned no information.';
+        });
+      } on PlatformException catch (error) {
+        if (!mounted) return;
+
+        setState(() {
+          _diagnosticResults[command] =
+              'Diagnostic error: ${error.message ?? error.code}';
+        });
+      } catch (error) {
+        if (!mounted) return;
+
+        setState(() {
+          _diagnosticResults[command] =
+              'Unable to run this check: $error';
+        });
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _isRunningDiagnostics = false;
+      });
+    }
+  }
 
   void _selectGuide(int index) {
     setState(() {
       _selectedIndex = index;
       _completedSteps.clear();
+      _diagnosticResults.clear();
+      _isRunningDiagnostics = false;
     });
   }
 
@@ -266,9 +355,7 @@ class _RepairToolsScreenState
     );
   }
 
-  Widget _buildChecklist(
-    List<String> steps,
-  ) {
+  Widget _buildChecklist(List<String> steps) {
     return Card(
       color: const Color(0xFF172638),
       margin: const EdgeInsets.only(bottom: 12),
@@ -335,6 +422,132 @@ class _RepairToolsScreenState
     );
   }
 
+  Widget _buildDeviceDiagnostics(RepairGuide guide) {
+    return Card(
+      color: const Color(0xFF172638),
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.health_and_safety,
+                  color: Colors.lightBlueAccent,
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Available automated checks',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'These checks inspect the phone running UDT. '
+              'They do not inspect a connected customer phone. '
+              'Target-device checks require an authenticated '
+              'ADB connection.',
+              style: TextStyle(
+                color: Colors.orangeAccent,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (guide.diagnosticCommands.isEmpty)
+              const Text(
+                'No automated network diagnostic is implemented '
+                'yet. Use the manual checklist above.',
+                style: TextStyle(
+                  color: Colors.white70,
+                  height: 1.5,
+                ),
+              )
+            else ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _isRunningDiagnostics
+                      ? null
+                      : () => _runAvailableDiagnostics(guide),
+                  icon: _isRunningDiagnostics
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(Icons.play_arrow),
+                  label: Text(
+                    _isRunningDiagnostics
+                        ? 'Running checks...'
+                        : 'Run available checks on this phone',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ...guide.diagnosticCommands.map((command) {
+                final result = _diagnosticResults[command];
+
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1928),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: Colors.white12,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _commandLabels[command] ?? command,
+                        style: const TextStyle(
+                          color: Colors.lightBlueAccent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      if (result == null)
+                        const Text(
+                          'Not run yet.',
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: 12,
+                          ),
+                        )
+                      else
+                        SelectableText(
+                          result,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            height: 1.5,
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildGuideDetails(RepairGuide guide) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -394,6 +607,7 @@ class _RepairToolsScreenState
           guide.symptoms,
           Icons.report_problem_outlined,
         ),
+        _buildDeviceDiagnostics(guide),
         _buildChecklist(guide.checks),
         _buildBulletSection(
           'Possible causes',
@@ -410,11 +624,11 @@ class _RepairToolsScreenState
           child: const Padding(
             padding: EdgeInsets.all(14),
             child: Text(
-              'IMPORTANT: This guide provides diagnostic '
-              'instructions only. It does not automatically '
-              'inspect or repair the connected device. '
-              'Always protect user data before performing '
-              'data-affecting operations.',
+              'IMPORTANT: Diagnostic results provide '
+              'information for technician review. They do not '
+              'automatically identify every fault or perform '
+              'repairs. Back up user data before any '
+              'data-affecting operation.',
               style: TextStyle(
                 color: Colors.orangeAccent,
                 height: 1.5,
@@ -502,12 +716,15 @@ class _RepairToolsScreenState
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _selectedIndex = null;
-                          _completedSteps.clear();
-                        });
-                      },
+                      onPressed: _isRunningDiagnostics
+                          ? null
+                          : () {
+                              setState(() {
+                                _selectedIndex = null;
+                                _completedSteps.clear();
+                                _diagnosticResults.clear();
+                              });
+                            },
                       icon: const Icon(Icons.arrow_back),
                       label: const Text('All problems'),
                     ),
@@ -537,6 +754,7 @@ class RepairGuide {
   final List<String> checks;
   final List<String> causes;
   final List<String> actions;
+  final List<String> diagnosticCommands;
   final String risk;
 
   const RepairGuide({
@@ -547,6 +765,7 @@ class RepairGuide {
     required this.checks,
     required this.causes,
     required this.actions,
+    required this.diagnosticCommands,
     required this.risk,
   });
 }
