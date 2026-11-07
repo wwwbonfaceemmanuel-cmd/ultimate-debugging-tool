@@ -2094,15 +2094,17 @@ override fun configureFlutterEngine(
                         android.content.pm.PackageManager.FEATURE_USB_HOST
                     )
 
-                // AUDIO HARDWARE
+                   // AUDIO HARDWARE
 
                 val audioManager =
                     getSystemService(Context.AUDIO_SERVICE)
-                        as android.media.AudioManager
+                        as? android.media.AudioManager
 
                 val audioDevices =
                     try {
-                        if (Build.VERSION.SDK_INT >= 23) {
+                        if (audioManager == null) {
+                            "Audio service unavailable."
+                        } else if (Build.VERSION.SDK_INT >= 23) {
                             audioManager.getDevices(
                                 android.media.AudioManager.GET_DEVICES_ALL
                             ).joinToString("\n") {
