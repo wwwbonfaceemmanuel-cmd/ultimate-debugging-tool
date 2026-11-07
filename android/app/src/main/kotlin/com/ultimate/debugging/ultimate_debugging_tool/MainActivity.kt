@@ -2138,37 +2138,43 @@ override fun configureFlutterEngine(
                         as? android.hardware.camera2.CameraManager
 
                 val cameraReport = try {
-                    cameraManager.cameraIdList.joinToString("\n") { id ->
+                    val manager = cameraManager
 
-                        val characteristics =
-                            cameraManager.getCameraCharacteristics(id)
+                    if (manager == null) {
+                        "Camera service unavailable."
+                    } else {
+                        manager.cameraIdList.joinToString("\n") { id ->
 
-                        val facing =
-                            characteristics.get(
-                                android.hardware.camera2.CameraCharacteristics.LENS_FACING
-                            )
+                            val characteristics =
+                                manager.getCameraCharacteristics(id)
 
-                        val facingName = when (facing) {
-                            android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT ->
-                                "Front"
+                            val facing =
+                                characteristics.get(
+                                    android.hardware.camera2.CameraCharacteristics.LENS_FACING
+                                )
 
-                            android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK ->
-                                "Back"
+                            val facingName = when (facing) {
+                                android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT ->
+                                    "Front"
 
-                            android.hardware.camera2.CameraCharacteristics.LENS_FACING_EXTERNAL ->
-                                "External"
+                                android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK ->
+                                    "Back"
 
-                            else -> "Unknown"
+                                android.hardware.camera2.CameraCharacteristics.LENS_FACING_EXTERNAL ->
+                                    "External"
+
+                                else -> "Unknown"
+                            }
+
+                            val hardwareLevel =
+                                characteristics.get(
+                                    android.hardware.camera2.CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL
+                                )
+
+                            "Camera ID: $id | Facing: $facingName | Hardware Level: $hardwareLevel"
+                        }.ifBlank {
+                            "No camera devices exposed."
                         }
-
-                        val hardwareLevel =
-                            characteristics.get(
-                                android.hardware.camera2.CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL
-                            )
-
-                        "Camera ID: $id | Facing: $facingName | Hardware Level: $hardwareLevel"
-                    }.ifBlank {
-                        "No camera devices exposed."
                     }
                 } catch (e: Exception) {
                     "Camera information unavailable: ${e.message}"
