@@ -159,481 +159,295 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    override fun configureFlutterEngine(
-        flutterEngine: FlutterEngine
-    ) {
-        super.configureFlutterEngine(flutterEngine)
+    
+override fun configureFlutterEngine(
+    flutterEngine: FlutterEngine
+) {
+    super.configureFlutterEngine(flutterEngine)
 
-        usbManager =
-            getSystemService(Context.USB_SERVICE) as UsbManager
+    usbManager =
+        getSystemService(Context.USB_SERVICE) as UsbManager
 
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            METHOD_CHANNEL
-        ).setMethodCallHandler { call, result ->
+    MethodChannel(
+        flutterEngine.dartExecutor.binaryMessenger,
+        METHOD_CHANNEL
+    ).setMethodCallHandler { call, result ->
 
-            when (call.method) {
+        when (call.method) {
 
-                "executeStandardDiagnostic" -> {
+            "executeStandardDiagnostic" -> {
+                val command = call.argument<String>("command")
 
-                    val command = call.argument<String>("command")
-
-                    if (command.isNullOrBlank()) {
+                if (command.isNullOrBlank()) {
+                    result.error(
+                        "INVALID_COMMAND",
+                        "A command is required.",
+                        null
+                    )
+                } else {
+                    try {
+                        result.success(
+                            executeStandardDiagnostic(command)
+                        )
+                    } catch (e: Exception) {
                         result.error(
-                            "INVALID_COMMAND",
-                            "A command is required.",
+                            "DIAGNOSTIC_ERROR",
+                            e.message ?: "Diagnostic command failed.",
                             null
                         )
-                    } else {
-                        try {
-                            result.success(
-                                executeStandardDiagnostic(command)
-                            )
-                        } catch (e: Exception) {
-                            result.error(
-                                "DIAGNOSTIC_ERROR",
-                                e.message ?: "Diagnostic command failed.",
-                                null
-                            )
-                        }
                     }
                 }
+            }
 
-                "executeAdbCommand" -> {
-                    executeTerminalCommand(
-                        call,
-                        result,
-                        requireRoot = false
+            "executeAdbCommand" -> {
+                executeTerminalCommand(
+                    call,
+                    result,
+                    requireRoot = false
+                )
+            }
+
+            "executeRootCommand" -> {
+                executeTerminalCommand(
+                    call,
+                    result,
+                    requireRoot = true
+                )
+            }
+
+            "executeRepairCommand" -> {
+                executeRepairCommand(call, result)
+            }
+
+            "getUsbDevices" -> {
+                try {
+                    result.success(getConnectedUsbDevices())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Unable to retrieve USB devices", e)
+                    result.error(
+                        "USB_ERROR",
+                        e.message ?: "Unable to retrieve USB devices.",
+                        null
                     )
                 }
+            }
 
-                "executeRootCommand" -> {
-                    executeTerminalCommand(
-                        call,
-                        result,
-                        requireRoot = true
+            "getAdbInterfaces" -> {
+                try {
+                    result.success(getAdbInterfaces())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Unable to inspect ADB interfaces", e)
+                    result.error(
+                        "ADB_INTERFACE_ERROR",
+                        e.message ?: "Unable to retrieve ADB interfaces.",
+                        null
                     )
                 }
+            }
 
-                    private fun executeRepairCommand(
-        call: MethodCall,
-        result: MethodChannel.Result
-    ) {
-        val operation =
-            call.argument<String>("operation")?.trim()
+            "requestUsbPermission" -> {
+                val deviceName =
+                    call.argument<String>("deviceName")
 
-        val packageName =
-            call.argument<String>("packageName")?.trim()
+                if (deviceName.isNullOrBlank()) {
+                    result.error(
+                        "INVALID_DEVICE",
+                        "USB device name is required.",
+                        null
+                    )
+                    return@setMethodCallHandler
+                }
 
-        val confirmed =
-            call.argument<Boolean>("confirmed") == true
+                val device = usbManager.deviceList[deviceName]
 
-        if (operation != "force-stop-app") {
-            result.error(
-                "REPAIR_NOT_ALLOWED",
-                "This repair operation is not approved.",
-                null
-            )
-            return
-        }
-
-        if (!confirmed) {
-            result.error(
-                "CONFIRMATION_REQUIRED",
-                "Explicit confirmation is required before repair.",
-                null
-            )
-            return
-        }
-
-        if (
-            packageName.isNullOrBlank() ||
-            !packageName.matches(
-                Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+")
-            )
-        ) {
-            result.error(
-                "INVALID_PACKAGE",
-                "Enter a valid application package name.",
-                null
-            )
-            return
-        }
-
-        try {
-            terminalExecutor.execute {
+                if (device == null) {
+                    result.error(
+                        "DEVICE_NOT_FOUND",
+                        "USB device is no longer connected.",
+                        null
+                    )
+                    return@setMethodCallHandler
+                }
 
                 try {
-                    val usbConnected =
-                        adbConnection?.isConnected() == true
-
-                    val wirelessConnected =
-                        wirelessStatus == "CONNECTED" &&
-                            wirelessManager?.getConnectionInfo()?.state ==
-                            AdbConnection.State.CONNECTED
-
-                    if (usbConnected && wirelessConnected) {
-                        throw IOException(
-                            "Disconnect either USB or Wireless ADB before repairing."
-                        )
-                    }
-
-                    if (!usbConnected && !wirelessConnected) {
-                        throw IOException(
-                            "No authenticated ADB connection. Connect the target device first."
-                        )
-                    }
-
-                    fun executeShell(
-                        command: String
-                    ): AdbShellSession.CommandResult {
-                        return if (usbConnected) {
-                            adbConnection!!
-                                .createShellSession()
-                                .execute(command, 30000L)
-                        } else {
-                            wirelessManager!!
-                                .executeCommand(command, 30000L)
-                        }
-                    }
-
-                    fun shellQuote(value: String): String {
-                        return "'" + value.replace(
-                            "'",
-                            "'\\''"
-                        ) + "'"
-                    }
-
-                    val quotedPackage =
-                        shellQuote(packageName)
-
-                    // Confirm that the application exists.
-                    val packageCheck = executeShell(
-                        "pm path $quotedPackage"
-                    )
-
-                    if (
-                        packageCheck.exitCode != 0 ||
-                        !packageCheck.output.contains("package:")
-                    ) {
-                        throw IOException(
-                            "The application was not found on the connected device."
-                        )
-                    }
-
-                    // Protect system applications from this operation.
-                    val systemCheck = executeShell(
-                        "pm list packages -s $quotedPackage"
-                    )
-
-                    val isSystemPackage =
-                        systemCheck.output
-                            .lineSequence()
-                            .any {
-                                it.trim() == "package:$packageName"
-                            }
-
-                    if (isSystemPackage) {
-                        throw SecurityException(
-                            "System applications cannot be restarted through this repair operation."
-                        )
-                    }
-
-                    // Stop the selected third-party application.
-                    val repairResult = executeShell(
-                        "am force-stop --user 0 $quotedPackage"
-                    )
-
-                    if (repairResult.exitCode != 0) {
-                        throw IOException(
-                            repairResult.errorOutput.ifBlank {
-                                "The application restart operation failed."
-                            }
-                        )
-                    }
-
-                    mainHandler.post {
-                        if (!activityDestroyed) {
-                            result.success(
-                                mapOf(
-                                    "success" to true,
-                                    "operation" to "force-stop-app",
-                                    "packageName" to packageName,
-                                    "risk" to "LOW",
-                                    "dataPreserved" to true,
-                                    "message" to "The application force-stop operation completed successfully.",
-                                    "verification" to "ADB reported successful execution. Reopen the application to test it."
-                                )
-                            )
-                        }
-                    }
-
+                    requestDevicePermission(device)
+                    result.success(true)
                 } catch (e: Exception) {
+                    Log.e(TAG, "USB permission request failed", e)
+                    result.error(
+                        "PERMISSION_ERROR",
+                        e.message ?: "USB permission request failed.",
+                        null
+                    )
+                }
+            }
 
+            "connectAdb" -> {
+                connectAdb(call, result)
+            }
+
+            "getAdbConnectionStatus" -> {
+                result.success(
+                    mapOf(
+                        "status" to getCurrentAdbStatus(),
+                        "connected" to (
+                            adbConnection?.isConnected() == true
+                        )
+                    )
+                )
+            }
+
+            "disconnectAdb" -> {
+                disconnectAdbInternal()
+                result.success(true)
+            }
+
+            "getAdbKeyFingerprint" -> {
+                getAdbKeyFingerprint(result)
+            }
+
+            "isUsbHostSupported" -> {
+                result.success(
+                    packageManager.hasSystemFeature(
+                        PackageManager.FEATURE_USB_HOST
+                    )
+                )
+            }
+
+            "exportApplicationApk" -> {
+                val packageName =
+                    call.argument<String>("packageName")
+
+                if (packageName.isNullOrBlank()) {
+                    result.error(
+                        "INVALID_PACKAGE",
+                        "A valid package name is required.",
+                        null
+                    )
+                    return@setMethodCallHandler
+                }
+
+                exportApplicationApk(packageName, result)
+            }
+
+            "shareApplicationApkBackup" -> {
+                val backupDirectory =
+                    call.argument<String>("backupDirectory")
+
+                val files =
+                    call.argument<List<*>>("files")
+
+                if (
+                    backupDirectory.isNullOrBlank() ||
+                    files.isNullOrEmpty()
+                ) {
+                    result.error(
+                        "INVALID_BACKUP",
+                        "A backup directory and verified APK file list are required.",
+                        null
+                    )
+                    return@setMethodCallHandler
+                }
+
+                shareApplicationApkBackup(
+                    backupDirectory,
+                    files,
+                    result
+                )
+            }
+
+            "getInstalledApplications" -> {
+                try {
+                    val inventory = ApplicationInventory(this)
+
+                    result.success(
+                        inventory.getInstalledApplications()
+                    )
+                } catch (e: Exception) {
                     Log.e(
                         TAG,
-                        "Repair operation failed",
+                        "Unable to retrieve installed applications",
                         e
                     )
-
-                    mainHandler.post {
-                        if (!activityDestroyed) {
-                            result.error(
-                                "REPAIR_EXECUTION_ERROR",
-                                e.message ?: "Repair operation failed.",
-                                null
-                            )
-                        }
-                    }
+                    result.error(
+                        "APP_INVENTORY_ERROR",
+                        e.message
+                            ?: "Unable to retrieve installed applications.",
+                        null
+                    )
                 }
             }
 
-        } catch (e: Exception) {
-            result.error(
-                "REPAIR_EXECUTION_ERROR",
-                e.message ?: "Unable to start repair operation.",
-                null
-            )
+            "getApplicationPermissions" -> {
+                val packageName =
+                    call.argument<String>("packageName")
+
+                if (packageName.isNullOrBlank()) {
+                    result.error(
+                        "INVALID_PACKAGE",
+                        "A valid package name is required.",
+                        null
+                    )
+                    return@setMethodCallHandler
+                }
+
+                try {
+                    result.success(
+                        getApplicationPermissions(packageName)
+                    )
+                } catch (e: Exception) {
+                    Log.e(
+                        TAG,
+                        "Unable to retrieve application permissions",
+                        e
+                    )
+                    result.error(
+                        "APP_PERMISSION_ERROR",
+                        e.message
+                            ?: "Unable to retrieve application permissions.",
+                        null
+                    )
+                }
+            }
+
+            "connectWirelessAdb" -> {
+                connectWirelessAdb(call, result)
+            }
+
+            "getWirelessAdbStatus" -> {
+                result.success(getWirelessAdbStatus())
+            }
+
+            "disconnectWirelessAdb" -> {
+                disconnectWirelessAdb(result)
+            }
+
+            else -> result.notImplemented()
         }
     }
 
-                "getUsbDevices" -> {
-                    try {
-                        result.success(getConnectedUsbDevices())
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Unable to retrieve USB devices", e)
+    EventChannel(
+        flutterEngine.dartExecutor.binaryMessenger,
+        EVENT_CHANNEL
+    ).setStreamHandler(
+        object : EventChannel.StreamHandler {
 
-                        result.error(
-                            "USB_ERROR",
-                            e.message ?: "Unable to retrieve USB devices.",
-                            null
-                        )
-                    }
-                }
+            override fun onListen(
+                arguments: Any?,
+                events: EventChannel.EventSink?
+            ) {
+                eventSink = events
+                sendUsbEvent("snapshot")
+                sendAdbEvent("snapshot")
+            }
 
-                "getAdbInterfaces" -> {
-                    try {
-                        result.success(getAdbInterfaces())
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Unable to inspect ADB interfaces", e)
-
-                        result.error(
-                            "ADB_INTERFACE_ERROR",
-                            e.message ?: "Unable to inspect ADB interfaces.",
-                            null
-                        )
-                    }
-                }
-
-                "requestUsbPermission" -> {
-
-                    val deviceName =
-                        call.argument<String>("deviceName")
-
-                    if (deviceName.isNullOrBlank()) {
-                        result.error(
-                            "INVALID_DEVICE",
-                            "USB device name is required.",
-                            null
-                        )
-                        return@setMethodCallHandler
-                    }
-
-                    val device = usbManager.deviceList[deviceName]
-
-                    if (device == null) {
-                        result.error(
-                            "DEVICE_NOT_FOUND",
-                            "USB device is no longer connected.",
-                            null
-                        )
-                        return@setMethodCallHandler
-                    }
-
-                    try {
-                        requestDevicePermission(device)
-                        result.success(true)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "USB permission request failed", e)
-
-                        result.error(
-                            "PERMISSION_ERROR",
-                            e.message ?: "USB permission request failed.",
-                            null
-                        )
-                    }
-                }
-
-                "connectAdb" -> {
-                    connectAdb(call, result)
-                }
-
-                "getAdbConnectionStatus" -> {
-                    result.success(
-                        mapOf(
-                            "status" to getCurrentAdbStatus(),
-                            "connected" to (
-                                adbConnection?.isConnected() == true
-                            )
-                        )
-                    )
-                }
-
-                "disconnectAdb" -> {
-                    disconnectAdbInternal()
-                    result.success(true)
-                }
-
-                "getAdbKeyFingerprint" -> {
-                    getAdbKeyFingerprint(result)
-                }
-
-                "isUsbHostSupported" -> {
-                    result.success(
-                        packageManager.hasSystemFeature(
-                            PackageManager.FEATURE_USB_HOST
-                        )
-                    )
-                }
-
-                "exportApplicationApk" -> {
-
-                    val packageName =
-                        call.argument<String>("packageName")
-
-                    if (packageName.isNullOrBlank()) {
-                        result.error(
-                            "INVALID_PACKAGE",
-                            "A valid package name is required.",
-                            null
-                        )
-                        return@setMethodCallHandler
-                    }
-
-                    exportApplicationApk(packageName, result)
-                }
-
-                "shareApplicationApkBackup" -> {
-
-                    val backupDirectory =
-                        call.argument<String>("backupDirectory")
-
-                    val files =
-                        call.argument<List<*>>("files")
-
-                    if (
-                        backupDirectory.isNullOrBlank() ||
-                        files.isNullOrEmpty()
-                    ) {
-                        result.error(
-                            "INVALID_BACKUP",
-                            "A backup directory and verified APK file list are required.",
-                            null
-                        )
-                        return@setMethodCallHandler
-                    }
-
-                    shareApplicationApkBackup(
-                        backupDirectory,
-                        files,
-                        result
-                    )
-                }
-
-                "getInstalledApplications" -> {
-                    try {
-                        val inventory = ApplicationInventory(this)
-
-                        result.success(
-                            inventory.getInstalledApplications()
-                        )
-                    } catch (e: Exception) {
-                        Log.e(
-                            TAG,
-                            "Unable to retrieve installed applications",
-                            e
-                        )
-
-                        result.error(
-                            "APP_INVENTORY_ERROR",
-                            e.message
-                                ?: "Unable to retrieve installed applications.",
-                            null
-                        )
-                    }
-                }
-
-                "getApplicationPermissions" -> {
-
-                    val packageName =
-                        call.argument<String>("packageName")
-
-                    if (packageName.isNullOrBlank()) {
-                        result.error(
-                            "INVALID_PACKAGE",
-                            "A valid package name is required.",
-                            null
-                        )
-                        return@setMethodCallHandler
-                    }
-
-                    try {
-                        result.success(
-                            getApplicationPermissions(packageName)
-                        )
-                    } catch (e: Exception) {
-                        Log.e(
-                            TAG,
-                            "Unable to retrieve application permissions",
-                            e
-                        )
-
-                        result.error(
-                            "APP_PERMISSION_ERROR",
-                            e.message
-                                ?: "Unable to retrieve application permissions.",
-                            null
-                        )
-                    }
-                }
-
-                "connectWirelessAdb" -> {
-                    connectWirelessAdb(call, result)
-                }
-
-                "getWirelessAdbStatus" -> {
-                    result.success(getWirelessAdbStatus())
-                }
-
-                "disconnectWirelessAdb" -> {
-                    disconnectWirelessAdb(result)
-                }
-
-                else -> result.notImplemented()
+            override fun onCancel(arguments: Any?) {
+                eventSink = null
             }
         }
+    )
+}
 
-        EventChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            EVENT_CHANNEL
-        ).setStreamHandler(
-            object : EventChannel.StreamHandler {
-
-                override fun onListen(
-                    arguments: Any?,
-                    events: EventChannel.EventSink?
-                ) {
-                    eventSink = events
-                    sendUsbEvent("snapshot")
-                    sendAdbEvent("snapshot")
-                }
-
-                override fun onCancel(arguments: Any?) {
-                    eventSink = null
-                }
-            }
-        )
-    }
 
     private fun executeStandardDiagnostic(
         command: String
