@@ -549,7 +549,7 @@ override fun configureFlutterEngine(
                         as SensorManager
 
                 val sensors = sensorManager
-                    .getSensorList(Sensor.TYPE_ALL)
+                    .getSensorList(android.hardware.Sensor.TYPE_ALL)
                     .sortedBy { it.name }
                     .joinToString("\n") {
                         "${it.name} | ${it.vendor} | Type: ${it.type}"
