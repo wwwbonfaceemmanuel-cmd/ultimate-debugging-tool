@@ -563,19 +563,29 @@ override fun configureFlutterEngine(
                     .joinToString("\n")
                     .ifBlank { "Unavailable" }
 
-                fun readProperty(name: String): String {
+               fun readProperty(name: String): String {
+                    var process: Process? = null
+
                     return try {
-                        val process = Runtime.getRuntime().exec(
+                        process = Runtime.getRuntime().exec(
                             arrayOf("getprop", name)
                         )
+
                         val value = process.inputStream
                             .bufferedReader()
                             .use { it.readText().trim() }
 
-                        process.waitFor()
-                        value.ifBlank { "Unavailable" }
+                        val exitCode = process.waitFor()
+
+                        if (exitCode == 0 && value.isNotBlank()) {
+                            value
+                        } else {
+                            "Unavailable"
+                        }
                     } catch (e: Exception) {
                         "Unavailable"
+                    } finally {
+                        process?.destroy()
                     }
                 }
 
