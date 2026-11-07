@@ -2319,17 +2319,39 @@ override fun configureFlutterEngine(
                 6. AUDIO HARDWARE
                 ==========================================
 
-                Audio Mode: ${audioManager.mode}
-                Microphone Mute: ${audioManager.isMicrophoneMute}
+                Audio Mode: ${
+                    try {
+                        audioManager?.mode?.toString()
+                            ?: "Unavailable"
+                    } catch (e: Exception) {
+                        "Unavailable"
+                    }
+                }
+                Microphone Mute: ${
+                    try {
+                        audioManager?.isMicrophoneMute?.toString()
+                            ?: "Unavailable"
+                    } catch (e: Exception) {
+                        "Unavailable"
+                    }
+                }
                 Music Volume: ${
-                    audioManager.getStreamVolume(
-                        android.media.AudioManager.STREAM_MUSIC
-                    )
+                    try {
+                        audioManager?.getStreamVolume(
+                            android.media.AudioManager.STREAM_MUSIC
+                        )?.toString() ?: "Unavailable"
+                    } catch (e: Exception) {
+                        "Unavailable"
+                    }
                 }
                 Maximum Music Volume: ${
-                    audioManager.getStreamMaxVolume(
-                        android.media.AudioManager.STREAM_MUSIC
-                    )
+                    try {
+                        audioManager?.getStreamMaxVolume(
+                            android.media.AudioManager.STREAM_MUSIC
+                        )?.toString() ?: "Unavailable"
+                    } catch (e: Exception) {
+                        "Unavailable"
+                    }
                 }
 
                 Audio Devices:
