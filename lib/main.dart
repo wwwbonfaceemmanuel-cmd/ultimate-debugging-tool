@@ -8,6 +8,7 @@ import 'screens/diagnostics_screen.dart';
 import 'screens/apk_manager_screen.dart';
 import 'screens/command_terminal_screen.dart';
 import 'screens/repair_tools_screen.dart';
+import 'screens/repair_history_screen.dart';
 
 void main() {
   runApp(const UltimateDebuggingTool());
