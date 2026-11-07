@@ -357,7 +357,7 @@ class MainActivity : FlutterActivity() {
                             result.success(
                                 mapOf(
                                     "success" to true,
-                                    "operation" to "restart-app",
+                                    "operation" to "force-stop-app",
                                     "packageName" to packageName,
                                     "risk" to "LOW",
                                     "dataPreserved" to true,
