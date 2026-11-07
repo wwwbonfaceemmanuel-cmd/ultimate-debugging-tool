@@ -2337,7 +2337,7 @@ override fun configureFlutterEngine(
                 Width: ${displayMetrics.widthPixels} pixels
                 Height: ${displayMetrics.heightPixels} pixels
                 Density: ${displayMetrics.densityDpi} DPI
-                Refresh Rate: ${"%.2f".format(refreshRate)} Hz
+                Refresh Rate: $refreshRate
                 Touchscreen Supported: $touchSupported
                 Multitouch Supported: $multitouchSupported
 
