@@ -2060,8 +2060,11 @@ override fun configureFlutterEngine(
                     getSystemService(Context.USB_SERVICE)
                         as android.hardware.usb.UsbManager
 
-                val usbDevices =
-                    usbManager.deviceList.values
+               val usbDevices = try {
+                    usbManager.deviceList.values.toList()
+                } catch (e: Exception) {
+                    emptyList<android.hardware.usb.UsbDevice>()
+                }
 
                 val usbReport =
                     usbDevices.joinToString("\n") { device ->
