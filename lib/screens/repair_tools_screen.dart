@@ -227,6 +227,27 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
     super.dispose();
   }
 
+    Future<void> _saveRepairHistory({
+    required String operation,
+    required String category,
+    required String result,
+    String details = '',
+  }) async {
+    try {
+      await _diagnosticChannel.invokeMethod(
+        'saveRepairHistory',
+        {
+          'operation': operation,
+          'category': category,
+          'result': result,
+          'details': details,
+        },
+      );
+    } catch (error) {
+      debugPrint('Repair history save failed: $error');
+    }
+  }
+
   Future<void> _runAvailableDiagnostics(
     RepairGuide guide,
   ) async {
