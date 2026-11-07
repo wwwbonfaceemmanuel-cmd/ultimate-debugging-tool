@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -22,8 +21,13 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
   final TextEditingController _packageController =
       TextEditingController();
 
+  List<String> _targetPackages = [];
+  String? _selectedTargetPackage;
+
+  bool _isLoadingTargetPackages = false;
   bool _isRunningDiagnostics = false;
   bool _isRepairing = false;
+
   String? _repairMessage;
   bool? _repairSucceeded;
 
@@ -226,7 +230,9 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
   Future<void> _runAvailableDiagnostics(
     RepairGuide guide,
   ) async {
-    if (guide.diagnosticCommands.isEmpty) return;
+    if (guide.diagnosticCommands.isEmpty || _isRunningDiagnostics) {
+      return;
+    }
 
     setState(() {
       _isRunningDiagnostics = true;
@@ -273,12 +279,88 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
     }
   }
 
+  Future<void> _loadTargetApplications() async {
+    if (_isLoadingTargetPackages || _isRepairing) return;
+
+    setState(() {
+      _isLoadingTargetPackages = true;
+      _targetPackages.clear();
+      _selectedTargetPackage = null;
+      _packageController.clear();
+      _repairMessage = null;
+      _repairSucceeded = null;
+    });
+
+    try {
+      final output = await _diagnosticChannel.invokeMethod<String>(
+        'executeAdbCommand',
+        {'command': 'third-party-packages'},
+      );
+
+      final packages = (output ?? '')
+          .split('\n')
+          .map((line) => line.trim())
+          .where((line) => line.startsWith('package:'))
+          .map(
+            (line) => line.substring('package:'.length).trim(),
+          )
+          .where((name) => name.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort();
+
+      if (!mounted) return;
+
+      setState(() {
+        _targetPackages = packages;
+      });
+
+      if (packages.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'No third-party applications found. '
+              'Check the ADB connection.',
+            ),
+          ),
+        );
+      }
+    } on PlatformException catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Could not load target applications: '
+            '${error.message ?? error.code}',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Application loading failed: $error'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingTargetPackages = false;
+        });
+      }
+    }
+  }
+
   Future<void> _executeForceStop() async {
-    final packageName = _packageController.text.trim();
+    final packageName =
+        (_selectedTargetPackage ?? _packageController.text).trim();
 
     if (packageName.isEmpty) {
       setState(() {
-        _repairMessage = 'Enter the target application package name.';
+        _repairMessage =
+            'Load applications from the connected phone and select one.';
         _repairSucceeded = false;
       });
       return;
@@ -350,8 +432,9 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
         _repairSucceeded = success;
         _repairMessage = success
             ? '${response?['message'] ?? 'Force-stop completed.'}\n\n'
-                'Verification: ${response?['verification'] ?? 'Reopen the app and test it.'}'
-            : 'The repair operation did not report success.';
+                'Verification: '
+                '${response?['verification'] ?? 'Reopen the app and test it.'}'
+            : '${response?['message'] ?? 'The repair operation did not report success.'}';
       });
     } on PlatformException catch (error) {
       if (!mounted) return;
@@ -383,11 +466,32 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
       _selectedIndex = index;
       _completedSteps.clear();
       _diagnosticResults.clear();
+
       _packageController.clear();
+      _targetPackages.clear();
+      _selectedTargetPackage = null;
+
       _repairMessage = null;
       _repairSucceeded = null;
+
       _isRunningDiagnostics = false;
       _isRepairing = false;
+      _isLoadingTargetPackages = false;
+    });
+  }
+
+  void _returnToGuides() {
+    setState(() {
+      _selectedIndex = null;
+      _completedSteps.clear();
+      _diagnosticResults.clear();
+
+      _packageController.clear();
+      _targetPackages.clear();
+      _selectedTargetPackage = null;
+
+      _repairMessage = null;
+      _repairSucceeded = null;
     });
   }
 
@@ -667,7 +771,7 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
                   color: Colors.orangeAccent,
                 ),
                 SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Controlled application repair',
                     style: TextStyle(
@@ -691,23 +795,67 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _packageController,
-              enabled: !_isRepairing,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(
-                labelText: 'Target application package name',
-                hintText: 'com.example.application',
-                labelStyle: TextStyle(color: Colors.white70),
-                hintStyle: TextStyle(color: Colors.white38),
-                border: OutlineInputBorder(),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isLoadingTargetPackages || _isRepairing
+                    ? null
+                    : _loadTargetApplications,
+                icon: _isLoadingTargetPackages
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Icon(Icons.refresh),
+                label: Text(
+                  _isLoadingTargetPackages
+                      ? 'Loading target applications...'
+                      : 'Load applications from connected phone',
+                ),
               ),
             ),
-            const SizedBox(height: 10),
+            if (_targetPackages.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: _selectedTargetPackage,
+                isExpanded: true,
+                dropdownColor: const Color(0xFF172638),
+                decoration: const InputDecoration(
+                  labelText: 'Select target application',
+                  border: OutlineInputBorder(),
+                  labelStyle: TextStyle(color: Colors.white70),
+                ),
+                items: _targetPackages.map((packageName) {
+                  return DropdownMenuItem<String>(
+                    value: packageName,
+                    child: Text(
+                      packageName,
+                      style: const TextStyle(color: Colors.white),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }).toList(),
+                onChanged: _isRepairing
+                    ? null
+                    : (value) {
+                        setState(() {
+                          _selectedTargetPackage = value;
+                          _packageController.text = value ?? '';
+                          _repairMessage = null;
+                          _repairSucceeded = null;
+                        });
+                      },
+              ),
+            ],
+            const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: _isRepairing
+                onPressed: _isRepairing ||
+                        _isLoadingTargetPackages
                     ? null
                     : _executeForceStop,
                 icon: _isRepairing
@@ -929,18 +1077,12 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton.icon(
-                      onPressed: _isRunningDiagnostics || _isRepairing
-                          ? null
-                          : () {
-                              setState(() {
-                                _selectedIndex = null;
-                                _completedSteps.clear();
-                                _diagnosticResults.clear();
-                                _packageController.clear();
-                                _repairMessage = null;
-                                _repairSucceeded = null;
-                              });
-                            },
+                      onPressed:
+                          _isRunningDiagnostics ||
+                                  _isRepairing ||
+                                  _isLoadingTargetPackages
+                              ? null
+                              : _returnToGuides,
                       icon: const Icon(Icons.arrow_back),
                       label: const Text('All problems'),
                     ),
