@@ -119,7 +119,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     }
   }
 
-  Future<void> _runAllChecks() async {
+   Future<void> _runAllChecks() async {
     if (_runningAll) return;
 
     setState(() {
@@ -129,6 +129,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     try {
       for (final command in _checks.keys) {
         if (!mounted) return;
+
+        // The technician suite is a separate comprehensive report.
+        // Skip it here to avoid repeating individual diagnostics.
+        if (command == 'technician-suite') continue;
+
         await _runCheck(command);
       }
     } finally {
