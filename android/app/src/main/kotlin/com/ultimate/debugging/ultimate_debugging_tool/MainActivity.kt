@@ -2135,7 +2135,7 @@ override fun configureFlutterEngine(
 
                 val cameraManager =
                     getSystemService(Context.CAMERA_SERVICE)
-                        as android.hardware.camera2.CameraManager
+                        as? android.hardware.camera2.CameraManager
 
                 val cameraReport = try {
                     cameraManager.cameraIdList.joinToString("\n") { id ->
