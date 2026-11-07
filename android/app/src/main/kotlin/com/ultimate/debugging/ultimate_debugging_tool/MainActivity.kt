@@ -2049,7 +2049,11 @@ override fun configureFlutterEngine(
                         as ActivityManager
 
                 val runningProcesses =
-                    activityManager.runningAppProcesses
+                    try {
+                        activityManager.runningAppProcesses
+                    } catch (e: Exception) {
+                        null
+                    }
 
                 val processReport =
                     runningProcesses
