@@ -1825,52 +1825,7 @@ override fun configureFlutterEngine(
                     "Unavailable"
                 }
 
-                 // TECHNICIAN ASSESSMENT
-
-                val assessment =
-                    mutableListOf<String>()
-
-                val thermalWarning =
-                    thermalStatus.contains(
-                        "Severe",
-                        ignoreCase = true
-                    ) ||
-                    thermalStatus.contains(
-                        "Critical",
-                        ignoreCase = true
-                    ) ||
-                    thermalStatus.contains(
-                        "Emergency",
-                        ignoreCase = true
-                    ) ||
-                    thermalStatus.contains(
-                        "shutdown",
-                        ignoreCase = true
-                    )
-
-                if (thermalWarning) {
-                    assessment.add(
-                        "WARNING: Android reports a serious thermal condition. Allow the device to cool and investigate."
-                    )
-                }
-
-                if (disabledApps > 0) {
-                    assessment.add(
-                        "$disabledApps installed applications are disabled. Review their status and purpose before taking action."
-                    )
-                }
-
-                if (usbDevices.isEmpty()) {
-                    assessment.add(
-                        "No external USB device is currently detected. This does not prove USB hardware failure."
-                    )
-                }
-
-                if (assessment.isEmpty()) {
-                    assessment.add(
-                        "No immediate abnormal condition detected from available indicators."
-                    )
-                }
+                 
                 """
                 ADVANCED NETWORK DIAGNOSTIC REPORT
 
