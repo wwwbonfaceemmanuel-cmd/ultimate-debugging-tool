@@ -1878,7 +1878,7 @@ override fun configureFlutterEngine(
                 5. TECHNICIAN ASSESSMENT
                 ==========================================
 
-                ${assessment.joinToString("\n") { "- $it" }}
+                No technician assessment is available in this network report.
 
                 ==========================================
                 6. DIAGNOSTIC LIMITATIONS
