@@ -1961,15 +1961,19 @@ override fun configureFlutterEngine(
                         as android.hardware.SensorManager
 
                 val temperatureSensors =
-                    sensorManager.getSensorList(
-                        android.hardware.Sensor.TYPE_ALL
-                    ).filter {
-                        it.type ==
-                            android.hardware.Sensor.TYPE_AMBIENT_TEMPERATURE
-                    }.joinToString("\n") {
-                        "${it.name} | ${it.vendor}"
-                    }.ifBlank {
-                        "No ambient temperature sensors exposed."
+                    try {
+                        sensorManager.getSensorList(
+                            android.hardware.Sensor.TYPE_ALL
+                        ).filter {
+                            it.type ==
+                                android.hardware.Sensor.TYPE_AMBIENT_TEMPERATURE
+                        }.joinToString("\n") {
+                            "${it.name} | ${it.vendor}"
+                        }.ifBlank {
+                            "No ambient temperature sensors exposed."
+                        }
+                    } catch (e: Exception) {
+                        "Temperature sensor information unavailable: ${e.message}"
                     }
 
                 val powerManager =
