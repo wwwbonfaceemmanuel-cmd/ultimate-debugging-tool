@@ -968,6 +968,185 @@ private fun executeTerminalCommand(
 }
 
 
+
+private fun executeRepairCommand(
+    call: MethodCall,
+    result: MethodChannel.Result
+) {
+    val operation =
+        call.argument<String>("operation")?.trim()
+
+    val packageName =
+        call.argument<String>("packageName")?.trim()
+
+    val confirmed =
+        call.argument<Boolean>("confirmed") == true
+
+    if (operation != "force-stop-app") {
+        result.error(
+            "REPAIR_NOT_ALLOWED",
+            "This repair operation is not approved.",
+            null
+        )
+        return
+    }
+
+    if (!confirmed) {
+        result.error(
+            "CONFIRMATION_REQUIRED",
+            "Explicit confirmation is required before repair.",
+            null
+        )
+        return
+    }
+
+    if (
+        packageName.isNullOrBlank() ||
+        !packageName.matches(
+            Regex("[A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+")
+        )
+    ) {
+        result.error(
+            "INVALID_PACKAGE",
+            "Enter a valid application package name.",
+            null
+        )
+        return
+    }
+
+    try {
+        terminalExecutor.execute {
+            try {
+                val usbConnected =
+                    adbConnection?.isConnected() == true
+
+                val wirelessConnected =
+                    wirelessStatus == "CONNECTED" &&
+                        wirelessManager?.getConnectionInfo()?.state ==
+                        AdbConnection.State.CONNECTED
+
+                if (usbConnected && wirelessConnected) {
+                    throw IOException(
+                        "Disconnect either USB or Wireless ADB before repairing."
+                    )
+                }
+
+                if (!usbConnected && !wirelessConnected) {
+                    throw IOException(
+                        "No authenticated ADB connection. Connect the target device first."
+                    )
+                }
+
+                fun executeShell(
+                    command: String
+                ): AdbShellSession.CommandResult {
+                    return if (usbConnected) {
+                        adbConnection!!
+                            .createShellSession()
+                            .execute(command, 30000L)
+                    } else {
+                        wirelessManager!!
+                            .executeCommand(command, 30000L)
+                    }
+                }
+
+                fun shellQuote(value: String): String {
+                    return "'" + value.replace(
+                        "'",
+                        "'\\''"
+                    ) + "'"
+                }
+
+                val quotedPackage =
+                    shellQuote(packageName)
+
+                val packageCheck = executeShell(
+                    "pm path $quotedPackage"
+                )
+
+                if (
+                    packageCheck.exitCode != 0 ||
+                    !packageCheck.output.contains("package:")
+                ) {
+                    throw IOException(
+                        "The application was not found on the connected device."
+                    )
+                }
+
+                val systemCheck = executeShell(
+                    "pm list packages -s $quotedPackage"
+                )
+
+                val isSystemPackage =
+                    systemCheck.output
+                        .lineSequence()
+                        .any {
+                            it.trim() == "package:$packageName"
+                        }
+
+                if (isSystemPackage) {
+                    throw SecurityException(
+                        "System applications cannot be force-stopped through this repair operation."
+                    )
+                }
+
+                val repairResult = executeShell(
+                    "am force-stop --user 0 $quotedPackage"
+                )
+
+                if (repairResult.exitCode != 0) {
+                    throw IOException(
+                        repairResult.errorOutput.ifBlank {
+                            "The application force-stop operation failed."
+                        }
+                    )
+                }
+
+                mainHandler.post {
+                    if (!activityDestroyed) {
+                        result.success(
+                            mapOf(
+                                "success" to true,
+                                "operation" to "force-stop-app",
+                                "packageName" to packageName,
+                                "risk" to "LOW",
+                                "dataPreserved" to true,
+                                "message" to "The application was force-stopped successfully.",
+                                "verification" to "ADB reported successful execution. Reopen the application to test it."
+                            )
+                        )
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Repair operation failed",
+                    e
+                )
+
+                mainHandler.post {
+                    if (!activityDestroyed) {
+                        result.error(
+                            "REPAIR_EXECUTION_ERROR",
+                            e.message ?: "Repair operation failed.",
+                            null
+                        )
+                    }
+                }
+            }
+        }
+    } catch (e: Exception) {
+        result.error(
+            "REPAIR_EXECUTION_ERROR",
+            e.message ?: "Unable to start repair operation.",
+            null
+        )
+    }
+}
+
+
+
     private fun connectAdb(
         call: MethodCall,
         result: MethodChannel.Result
