@@ -1982,36 +1982,42 @@ override fun configureFlutterEngine(
 
                 val powerManager =
                     getSystemService(Context.POWER_SERVICE)
-                        as android.os.PowerManager
+                        as? android.os.PowerManager
 
                 val thermalStatus =
-                    if (Build.VERSION.SDK_INT >= 29) {
-                        when (powerManager.currentThermalStatus) {
-                            android.os.PowerManager.THERMAL_STATUS_NONE ->
-                                "No thermal throttling reported"
+                    try {
+                        if (Build.VERSION.SDK_INT < 29) {
+                            "Not exposed on this Android version"
+                        } else if (powerManager == null) {
+                            "Power management service unavailable."
+                        } else {
+                            when (powerManager.currentThermalStatus) {
+                                android.os.PowerManager.THERMAL_STATUS_NONE ->
+                                    "No thermal throttling reported"
 
-                            android.os.PowerManager.THERMAL_STATUS_LIGHT ->
-                                "Light thermal condition"
+                                android.os.PowerManager.THERMAL_STATUS_LIGHT ->
+                                    "Light thermal condition"
 
-                            android.os.PowerManager.THERMAL_STATUS_MODERATE ->
-                                "Moderate thermal condition"
+                                android.os.PowerManager.THERMAL_STATUS_MODERATE ->
+                                    "Moderate thermal condition"
 
-                            android.os.PowerManager.THERMAL_STATUS_SEVERE ->
-                                "Severe thermal condition"
+                                android.os.PowerManager.THERMAL_STATUS_SEVERE ->
+                                    "Severe thermal condition"
 
-                            android.os.PowerManager.THERMAL_STATUS_CRITICAL ->
-                                "Critical thermal condition"
+                                android.os.PowerManager.THERMAL_STATUS_CRITICAL ->
+                                    "Critical thermal condition"
 
-                            android.os.PowerManager.THERMAL_STATUS_EMERGENCY ->
-                                "Emergency thermal condition"
+                                android.os.PowerManager.THERMAL_STATUS_EMERGENCY ->
+                                    "Emergency thermal condition"
 
-                            android.os.PowerManager.THERMAL_STATUS_SHUTDOWN ->
-                                "Thermal shutdown status"
+                                android.os.PowerManager.THERMAL_STATUS_SHUTDOWN ->
+                                    "Thermal shutdown status"
 
-                            else -> "Unknown"
+                                else -> "Unknown"
+                            }
                         }
-                    } else {
-                        "Not exposed on this Android version"
+                    } catch (e: Exception) {
+                        "Thermal status unavailable: ${e.message}"
                     }
 
                 // APPLICATION INVENTORY
