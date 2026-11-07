@@ -1053,90 +1053,215 @@ override fun configureFlutterEngine(
                 }
             }
 
+            
             "storage" -> {
 
-                val stat = StatFs(
-                    Environment.getDataDirectory().path
-                )
+                fun formatBytes(bytes: Long): String {
+                    if (bytes < 0) return "Unavailable"
 
-                val totalBytes = stat.totalBytes
-                val availableBytes = stat.availableBytes
-                val usedBytes = totalBytes - availableBytes
+                    val gb = bytes / (1024.0 * 1024.0 * 1024.0)
+                    val mb = bytes / (1024.0 * 1024.0)
 
-                val totalGB =
-                    totalBytes / (1024.0 * 1024.0 * 1024.0)
+                    return if (gb >= 1.0) {
+                        "%.2f GB".format(gb)
+                    } else {
+                        "%.2f MB".format(mb)
+                    }
+                }
 
-                val usedGB =
-                    usedBytes / (1024.0 * 1024.0 * 1024.0)
+                fun inspectStorage(path: String): String {
+                    return try {
+                        val file = java.io.File(path)
 
-                val availableGB =
-                    availableBytes / (1024.0 * 1024.0 * 1024.0)
+                        if (!file.exists()) {
+                            return "Path unavailable"
+                        }
+
+                        val stat = android.os.StatFs(path)
+
+                        val total = stat.totalBytes
+                        val free = stat.freeBytes
+                        val available = stat.availableBytes
+                        val used = total - free
+
+                        val usage = if (total > 0) {
+                            (used * 100.0) / total
+                        } else {
+                            0.0
+                        }
+
+                        """
+                        Path: $path
+                        Total Capacity: ${formatBytes(total)}
+                        Used Space: ${formatBytes(used)}
+                        Free Space: ${formatBytes(free)}
+                        Available to Applications: ${formatBytes(available)}
+                        Usage: ${"%.1f".format(usage)}%
+                        Block Size: ${formatBytes(stat.blockSizeLong)}
+                        Total Blocks: ${stat.blockCountLong}
+                        Free Blocks: ${stat.freeBlocksLong}
+                        """.trimIndent()
+
+                    } catch (e: Exception) {
+                        "Storage information unavailable: ${e.message}"
+                    }
+                }
+
+                fun directorySize(directory: java.io.File): Long {
+                    return try {
+                        if (!directory.exists()) {
+                            return 0L
+                        }
+
+                        if (directory.isFile) {
+                            return directory.length()
+                        }
+
+                        directory.listFiles()?.sumOf {
+                            directorySize(it)
+                        } ?: 0L
+
+                    } catch (e: Exception) {
+                        0L
+                    }
+                }
+
+                val internalStorage =
+                    inspectStorage(filesDir.absolutePath)
+
+                val sharedStorage =
+                    inspectStorage(
+                        android.os.Environment
+                            .getExternalStorageDirectory()
+                            .absolutePath
+                    )
+
+                val appFilesSize =
+                    directorySize(filesDir)
+
+                val appCacheSize =
+                    directorySize(cacheDir)
+
+                val externalDirectories =
+                    getExternalFilesDirs(null)
+
+                val externalReport =
+                    externalDirectories.mapIndexed { index, directory ->
+
+                        if (directory != null) {
+                            """
+                            Volume $index
+                            ${inspectStorage(directory.absolutePath)}
+                            """.trimIndent()
+                        } else {
+                            "Volume $index: Unavailable"
+                        }
+
+                    }.joinToString("\n\n")
+
+                val storageState =
+                    android.os.Environment.getExternalStorageState()
+
+                val removable =
+                    android.os.Environment.isExternalStorageRemovable()
+
+                val assessment = mutableListOf<String>()
+
+                try {
+                    val stat = android.os.StatFs(filesDir.absolutePath)
+
+                    val available = stat.availableBytes
+                    val total = stat.totalBytes
+
+                    if (total > 0 && available < total * 0.10) {
+                        assessment.add(
+                            "WARNING: Less than 10% of internal storage is available."
+                        )
+                    }
+
+                    if (available < 1024L * 1024L * 500L) {
+                        assessment.add(
+                            "CRITICAL: Less than 500 MB of internal storage is available."
+                        )
+                    }
+
+                } catch (e: Exception) {
+                    assessment.add(
+                        "Unable to assess internal storage capacity."
+                    )
+                }
+
+                if (assessment.isEmpty()) {
+                    assessment.add(
+                        "No immediate storage capacity warning detected."
+                    )
+                }
 
                 """
-                INTERNAL STORAGE
+                ADVANCED STORAGE DIAGNOSTIC REPORT
 
-                Total: %.2f GB
-                Used: %.2f GB
-                Available: %.2f GB
-                """.trimIndent().format(
-                    totalGB,
-                    usedGB,
-                    availableGB
-                )
-            }
+                ==========================================
+                1. INTERNAL STORAGE
+                ==========================================
 
-            "memory" -> {
+                $internalStorage
 
-                val activityManager =
-                    getSystemService(Context.ACTIVITY_SERVICE)
-                        as ActivityManager
+                ==========================================
+                2. SHARED STORAGE
+                ==========================================
 
-                val memoryInfo =
-                    ActivityManager.MemoryInfo()
+                $sharedStorage
 
-                activityManager.getMemoryInfo(memoryInfo)
+                ==========================================
+                3. APPLICATION STORAGE
+                ==========================================
 
-                val totalRAM =
-                    memoryInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
+                App Files Directory:
+                ${filesDir.absolutePath}
 
-                val availableRAM =
-                    memoryInfo.availMem / (1024.0 * 1024.0 * 1024.0)
+                App Files Usage:
+                ${formatBytes(appFilesSize)}
 
-                val usedRAM = totalRAM - availableRAM
+                App Cache Usage:
+                ${formatBytes(appCacheSize)}
 
-                """
-                RAM INFORMATION
+                ==========================================
+                4. STORAGE VOLUMES
+                ==========================================
 
-                Total RAM: %.2f GB
-                Used RAM: %.2f GB
-                Available RAM: %.2f GB
-                Low Memory: ${memoryInfo.lowMemory}
-                """.trimIndent().format(
-                    totalRAM,
-                    usedRAM,
-                    availableRAM
-                )
-            }
+                $externalReport
 
-            "uptime" -> {
+                ==========================================
+                5. STORAGE STATUS
+                ==========================================
 
-                val elapsed =
-                    android.os.SystemClock.elapsedRealtime()
+                External Storage State: $storageState
+                Removable Storage: $removable
 
-                val seconds = elapsed / 1000
+                ==========================================
+                6. TECHNICIAN ASSESSMENT
+                ==========================================
 
-                val days = seconds / 86400
-                val hours = (seconds % 86400) / 3600
-                val minutes = (seconds % 3600) / 60
-                val remainingSeconds = seconds % 60
+                ${assessment.joinToString("\n") { "- $it" }}
 
-                """
-                DEVICE UPTIME
+                ==========================================
+                7. STORAGE DIAGNOSTIC LIMITATIONS
+                ==========================================
 
-                $days days, $hours hours,
-                $minutes minutes, $remainingSeconds seconds
+                Android may restrict access to some directories.
+                Storage capacity readings do not measure flash
+                memory health, bad blocks, write endurance or
+                controller faults.
+
+                Full eMMC/UFS health diagnostics may require
+                authorized ADB, root or manufacturer service tools.
+
+                Do not format or erase storage during diagnosis.
+                Always back up important user data first.
+
                 """.trimIndent()
             }
+
 
             else -> {
                 "Unknown command: $command\nType 'help' to see available commands."
