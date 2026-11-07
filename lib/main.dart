@@ -7,6 +7,7 @@ import 'screens/wireless_adb_screen.dart';
 import 'screens/diagnostics_screen.dart';
 import 'screens/apk_manager_screen.dart';
 import 'screens/command_terminal_screen.dart';
+import 'screens/repair_tools_screen.dart';
 
 void main() {
   runApp(const UltimateDebuggingTool());
@@ -68,26 +69,26 @@ class DashboardScreen extends StatelessWidget {
         ),
       ),
       ToolItem(
-  title: 'Wireless ADB',
-  description: 'Wireless Android debugging tools.',
-  icon: Icons.wifi,
-  color: Colors.cyan,
-  onTap: () => _openScreen(
-    context,
-    const WirelessAdbScreen(),
-  ),
-),
+        title: 'Wireless ADB',
+        description: 'Wireless Android debugging tools.',
+        icon: Icons.wifi,
+        color: Colors.cyan,
+        onTap: () => _openScreen(
+          context,
+          const WirelessAdbScreen(),
+        ),
+      ),
       ToolItem(
-  title: 'Diagnostics',
-  description: 'Inspect device information and system status.',
-  icon: Icons.monitor_heart,
-  color: Colors.orange,
-  onTap: () => _openScreen(
-    context,
-    const DiagnosticsScreen(),
-  ),
-),
-            ToolItem(
+        title: 'Diagnostics',
+        description: 'Inspect device information and system status.',
+        icon: Icons.monitor_heart,
+        color: Colors.orange,
+        onTap: () => _openScreen(
+          context,
+          const DiagnosticsScreen(),
+        ),
+      ),
+      ToolItem(
         title: 'APK Manager',
         description: 'Manage and inspect installed Android applications.',
         icon: Icons.android,
@@ -98,20 +99,24 @@ class DashboardScreen extends StatelessWidget {
         ),
       ),
       ToolItem(
-  title: 'Command Terminal',
-  description: 'Advanced Android command terminal.',
-  icon: Icons.terminal,
-  color: Colors.purple,
-  onTap: () => _openScreen(
-    context,
-    const CommandTerminalScreen(),
-  ),
-),
+        title: 'Command Terminal',
+        description: 'Advanced Android command terminal.',
+        icon: Icons.terminal,
+        color: Colors.purple,
+        onTap: () => _openScreen(
+          context,
+          const CommandTerminalScreen(),
+        ),
+      ),
       ToolItem(
         title: 'Repair Tools',
-        description: 'Android troubleshooting and repair utilities.',
+        description: 'Guided Android troubleshooting and repair procedures.',
         icon: Icons.build,
         color: Colors.redAccent,
+        onTap: () => _openScreen(
+          context,
+          const RepairToolsScreen(),
+        ),
       ),
       ToolItem(
         title: 'File Manager',
@@ -151,7 +156,6 @@ class DashboardScreen extends StatelessWidget {
           ],
         ),
       ),
-
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -159,9 +163,7 @@ class DashboardScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _buildConnectionCard(),
-
               const SizedBox(height: 24),
-
               const Text(
                 'SERVICING TOOLS',
                 style: TextStyle(
@@ -170,9 +172,7 @@ class DashboardScreen extends StatelessWidget {
                   letterSpacing: 1,
                 ),
               ),
-
               const SizedBox(height: 14),
-
               GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -196,13 +196,9 @@ class DashboardScreen extends StatelessWidget {
                   );
                 },
               ),
-
               const SizedBox(height: 24),
-
               _buildSystemStatus(),
-
               const SizedBox(height: 20),
-
               const Center(
                 child: Text(
                   'ULTIMATE DEBUGGING TOOL',
@@ -213,7 +209,6 @@ class DashboardScreen extends StatelessWidget {
                   ),
                 ),
               ),
-
               const SizedBox(height: 8),
             ],
           ),
@@ -261,9 +256,7 @@ class DashboardScreen extends StatelessWidget {
               ),
             ],
           ),
-
           SizedBox(height: 12),
-
           Text(
             'Connect an Android device using USB OTG or wireless '
             'debugging to begin servicing.',
@@ -273,9 +266,7 @@ class DashboardScreen extends StatelessWidget {
               fontSize: 13,
             ),
           ),
-
           SizedBox(height: 14),
-
           Row(
             children: [
               Icon(
@@ -316,33 +307,25 @@ class DashboardScreen extends StatelessWidget {
               fontWeight: FontWeight.bold,
             ),
           ),
-
           SizedBox(height: 16),
-
           StatusItem(
             title: 'USB Manager',
             status: 'Interface available',
             color: Colors.greenAccent,
           ),
-
           SizedBox(height: 12),
-
           StatusItem(
             title: 'ADB Manager',
             status: 'Interface detection module',
             color: Colors.orangeAccent,
           ),
-
           SizedBox(height: 12),
-
           StatusItem(
             title: 'Wireless ADB',
             status: 'Legacy TCP module added',
             color: Colors.orangeAccent,
           ),
-
           SizedBox(height: 12),
-
           StatusItem(
             title: 'Device Connection',
             status: 'Waiting for device',
@@ -410,9 +393,7 @@ class ToolCard extends StatelessWidget {
                 color: color,
                 size: 32,
               ),
-
               const Spacer(),
-
               Text(
                 title,
                 maxLines: 1,
@@ -423,9 +404,7 @@ class ToolCard extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-
               const SizedBox(height: 6),
-
               Text(
                 description,
                 maxLines: 3,
@@ -436,9 +415,7 @@ class ToolCard extends StatelessWidget {
                   height: 1.4,
                 ),
               ),
-
               const SizedBox(height: 8),
-
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
@@ -482,9 +459,7 @@ class StatusItem extends StatelessWidget {
           size: 9,
           color: color,
         ),
-
         const SizedBox(width: 10),
-
         Expanded(
           child: Text(
             title,
@@ -494,7 +469,6 @@ class StatusItem extends StatelessWidget {
             ),
           ),
         ),
-
         Text(
           status,
           style: TextStyle(
