@@ -1825,39 +1825,52 @@ override fun configureFlutterEngine(
                     "Unavailable"
                 }
 
+                 // TECHNICIAN ASSESSMENT
+
                 val assessment =
                     mutableListOf<String>()
 
-                if (activeNetwork == null) {
+                val thermalWarning =
+                    thermalStatus.contains(
+                        "Severe",
+                        ignoreCase = true
+                    ) ||
+                    thermalStatus.contains(
+                        "Critical",
+                        ignoreCase = true
+                    ) ||
+                    thermalStatus.contains(
+                        "Emergency",
+                        ignoreCase = true
+                    ) ||
+                    thermalStatus.contains(
+                        "shutdown",
+                        ignoreCase = true
+                    )
+
+                if (thermalWarning) {
                     assessment.add(
-                        "No active network connection detected."
+                        "WARNING: Android reports a serious thermal condition. Allow the device to cool and investigate."
                     )
                 }
 
-                if (activeNetwork != null && !validatedInternet) {
+                if (disabledApps > 0) {
                     assessment.add(
-                        "Network is connected but Android has not validated internet access."
+                        "$disabledApps installed applications are disabled. Review their status and purpose before taking action."
                     )
                 }
 
-                if (connectionType == "Wi-Fi" && wifiSignal < -70) {
+                if (usbDevices.isEmpty()) {
                     assessment.add(
-                        "Wi-Fi signal is weak. Inspect distance, interference and router condition."
-                    )
-                }
-
-                if (vpnActive) {
-                    assessment.add(
-                        "VPN transport is active. It may affect routing or connectivity."
+                        "No external USB device is currently detected. This does not prove USB hardware failure."
                     )
                 }
 
                 if (assessment.isEmpty()) {
                     assessment.add(
-                        "No immediate network warning detected from available indicators."
+                        "No immediate abnormal condition detected from available indicators."
                     )
                 }
-
                 """
                 ADVANCED NETWORK DIAGNOSTIC REPORT
 
