@@ -228,7 +228,7 @@ class MainActivity : FlutterActivity() {
         val confirmed =
             call.argument<Boolean>("confirmed") == true
 
-        if (operation != "restart-app") {
+        if (operation != "force-stop-app") {
             result.error(
                 "REPAIR_NOT_ALLOWED",
                 "This repair operation is not approved.",
