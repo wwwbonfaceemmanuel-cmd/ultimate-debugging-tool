@@ -17,6 +17,9 @@ import android.hardware.usb.UsbConstants
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbManager
+
+import android.hardware.SensorManager
+
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -555,6 +558,7 @@ override fun configureFlutterEngine(
             }
 
 
+            
             "battery" -> {
 
                 val batteryIntent = registerReceiver(
@@ -565,6 +569,10 @@ override fun configureFlutterEngine(
                 if (batteryIntent == null) {
                     "Unable to retrieve battery information."
                 } else {
+
+                    val batteryManager =
+                        getSystemService(Context.BATTERY_SERVICE)
+                            as BatteryManager
 
                     val level = batteryIntent.getIntExtra(
                         BatteryManager.EXTRA_LEVEL,
@@ -588,12 +596,12 @@ override fun configureFlutterEngine(
                         -1
                     )
 
-                    val charging = when (status) {
+                    val chargingStatus = when (status) {
                         BatteryManager.BATTERY_STATUS_CHARGING ->
                             "Charging"
 
                         BatteryManager.BATTERY_STATUS_FULL ->
-                            "Full"
+                            "Fully charged"
 
                         BatteryManager.BATTERY_STATUS_DISCHARGING ->
                             "Discharging"
@@ -601,16 +609,188 @@ override fun configureFlutterEngine(
                         BatteryManager.BATTERY_STATUS_NOT_CHARGING ->
                             "Not charging"
 
-                        else -> "Unknown"
+                        BatteryManager.BATTERY_STATUS_UNKNOWN ->
+                            "Unknown"
+
+                        else -> "Unavailable"
                     }
+
+                    val health = batteryIntent.getIntExtra(
+                        BatteryManager.EXTRA_HEALTH,
+                        -1
+                    )
+
+                    val batteryHealth = when (health) {
+                        BatteryManager.BATTERY_HEALTH_GOOD ->
+                            "Good"
+
+                        BatteryManager.BATTERY_HEALTH_OVERHEAT ->
+                            "Overheating"
+
+                        BatteryManager.BATTERY_HEALTH_DEAD ->
+                            "Dead"
+
+                        BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE ->
+                            "Over voltage"
+
+                        BatteryManager.BATTERY_HEALTH_COLD ->
+                            "Too cold"
+
+                        BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE ->
+                            "Unspecified failure"
+
+                        else -> "Unknown or unavailable"
+                    }
+
+                    val temperature = batteryIntent.getIntExtra(
+                        BatteryManager.EXTRA_TEMPERATURE,
+                        -1
+                    )
+
+                    val voltage = batteryIntent.getIntExtra(
+                        BatteryManager.EXTRA_VOLTAGE,
+                        -1
+                    )
+
+                    val plugged = batteryIntent.getIntExtra(
+                        BatteryManager.EXTRA_PLUGGED,
+                        0
+                    )
+
+                    val chargingSource = when {
+                        plugged and BatteryManager.BATTERY_PLUGGED_AC != 0 ->
+                            "AC charger"
+
+                        plugged and BatteryManager.BATTERY_PLUGGED_USB != 0 ->
+                            "USB charger"
+
+                        plugged and BatteryManager.BATTERY_PLUGGED_WIRELESS != 0 ->
+                            "Wireless charger"
+
+                        else -> "Not connected or unknown"
+                    }
+
+                    val technology = batteryIntent.getStringExtra(
+                        BatteryManager.EXTRA_TECHNOLOGY
+                    ) ?: "Unavailable"
+
+                    val currentNow = batteryManager.getIntProperty(
+                        BatteryManager.BATTERY_PROPERTY_CURRENT_NOW
+                    )
+
+                    val currentAverage = batteryManager.getIntProperty(
+                        BatteryManager.BATTERY_PROPERTY_CURRENT_AVERAGE
+                    )
+
+                    val chargeCounter = batteryManager.getIntProperty(
+                        BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER
+                    )
+
+                    fun formatCurrent(value: Int): String {
+                        return if (value == Int.MIN_VALUE) {
+                            "Unavailable"
+                        } else {
+                            "%.2f mA".format(value / 1000.0)
+                        }
+                    }
+
+                    val temperatureC =
+                        if (temperature >= 0) {
+                            temperature / 10.0
+                        } else {
+                            -1.0
+                        }
+
+                    val voltageV =
+                        if (voltage > 0) {
+                            voltage / 1000.0
+                        } else {
+                            -1.0
+                        }
+
+                    val assessment = mutableListOf<String>()
+
+                    if (percentage in 0..15) {
+                        assessment.add(
+                            "Low battery level. Check charging and battery condition."
+                        )
+                    }
+
+                    if (temperatureC >= 45.0) {
+                        assessment.add(
+                            "HIGH TEMPERATURE: Battery is overheating. Stop intensive use and inspect the device."
+                        )
+                    } else if (temperatureC >= 40.0) {
+                        assessment.add(
+                            "Battery temperature is elevated. Monitor during charging and operation."
+                        )
+                    }
+
+                    if (
+                        health == BatteryManager.BATTERY_HEALTH_OVERHEAT ||
+                        health == BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE ||
+                        health == BatteryManager.BATTERY_HEALTH_DEAD ||
+                        health == BatteryManager.BATTERY_HEALTH_COLD ||
+                        health == BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE
+                    ) {
+                        assessment.add(
+                            "Android reports an abnormal battery health condition."
+                        )
+                    }
+
+                    if (assessment.isEmpty()) {
+                        assessment.add(
+                            "No abnormal condition detected from the available readings."
+                        )
+                    }
+
+                    val chargeCounterText =
+                        if (chargeCounter != Int.MIN_VALUE &&
+                            chargeCounter >= 0
+                        ) {
+                            "%.0f mAh".format(
+                                chargeCounter / 1000.0
+                            )
+                        } else {
+                            "Unavailable"
+                        }
 
                     """
-                    BATTERY INFORMATION
+                    BATTERY DIAGNOSTIC REPORT
 
+                    [BATTERY CONDITION]
                     Battery Level: ${
-                        if (percentage >= 0) "$percentage%" else "Unknown"
+                        if (percentage >= 0) "$percentage%" else "Unavailable"
                     }
-                    Status: $charging
+                    Battery Health: $batteryHealth
+                    Battery Technology: $technology
+                    Charge Counter: $chargeCounterText
+
+                    [CHARGING SYSTEM]
+                    Charging Status: $chargingStatus
+                    Charging Source: $chargingSource
+
+                    [ELECTRICAL READINGS]
+                    Battery Voltage: ${
+                        if (voltageV >= 0) "%.3f V".format(voltageV)
+                        else "Unavailable"
+                    }
+                    Instantaneous Current: ${formatCurrent(currentNow)}
+                    Average Current: ${formatCurrent(currentAverage)}
+
+                    [THERMAL READINGS]
+                    Battery Temperature: ${
+                        if (temperatureC >= 0) "%.1f °C".format(temperatureC)
+                        else "Unavailable"
+                    }
+
+                    [TECHNICIAN ASSESSMENT]
+                    ${assessment.joinToString("\n") { "- $it" }}
+
+                    [DATA LIMITATIONS]
+                    Battery capacity, cycle count and detailed charging-controller diagnostics
+                    are not exposed consistently by Android. Additional manufacturer-specific
+                    or authorized ADB diagnostics may be required.
                     """.trimIndent()
                 }
             }
