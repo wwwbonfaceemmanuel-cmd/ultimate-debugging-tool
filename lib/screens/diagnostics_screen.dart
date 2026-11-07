@@ -17,11 +17,14 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   final Map<String, String> _results = {};
   final Set<String> _running = {};
 
-  final Map<String, String> _checks = {
-    'device-info': 'Device Information',
+    final Map<String, String> _checks = {
+    'device-info': 'Device, Software & Firmware',
     'battery': 'Battery Diagnostics',
-    'storage': 'Storage Diagnostics',
-    'memory': 'RAM Diagnostics',
+    'storage': 'Advanced Storage Diagnostics',
+    'memory': 'RAM & Memory Diagnostics',
+    'security': 'Security Diagnostics',
+    'network': 'Network Diagnostics',
+    'technician-suite': 'Advanced Technician Suite',
     'uptime': 'Device Uptime',
   };
 
