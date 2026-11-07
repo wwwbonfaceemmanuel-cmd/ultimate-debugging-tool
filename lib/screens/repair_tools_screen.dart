@@ -310,6 +310,15 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
           _diagnosticResults[command] =
               'Unable to run this check: $error';
         });
+
+        await _saveRepairHistory(
+          operation:
+              '${guide.title} - ${_commandLabels[command] ?? command}',
+          category: 'Self-device diagnostic',
+          result: 'Failed',
+          details:
+              _diagnosticResults[command] ?? 'Unexpected diagnostic error.',
+        );
       }
     }
 
