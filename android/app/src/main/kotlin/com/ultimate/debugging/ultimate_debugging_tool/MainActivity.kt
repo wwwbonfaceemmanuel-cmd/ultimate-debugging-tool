@@ -2123,7 +2123,17 @@ override fun configureFlutterEngine(
                     windowManager.defaultDisplay
 
                 val refreshRate =
-                    display.refreshRate
+                    try {
+                        val rate = display.refreshRate
+
+                        if (rate > 0f) {
+                            "%.2f".format(rate) + " Hz"
+                        } else {
+                            "Unavailable"
+                        }
+                    } catch (e: Exception) {
+                        "Unavailable: ${e.message}"
+                    }
 
                 val touchSupported =
                     packageManager.hasSystemFeature(
