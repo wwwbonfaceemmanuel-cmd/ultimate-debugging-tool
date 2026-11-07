@@ -510,6 +510,12 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
         _repairSucceeded = false;
         _repairMessage = 'Repair failed: $error';
       });
+   await _saveRepairHistory(
+        operation: 'Force-stop application: $packageName',
+        category: 'ADB application repair',
+        result: 'Failed',
+        details: _repairMessage ?? 'Unexpected repair error.',
+      );
     } finally {
       if (mounted) {
         setState(() {
