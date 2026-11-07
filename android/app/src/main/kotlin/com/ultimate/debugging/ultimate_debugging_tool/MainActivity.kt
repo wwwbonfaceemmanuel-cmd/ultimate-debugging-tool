@@ -638,181 +638,339 @@ class MainActivity : FlutterActivity() {
         }
     }
 
-    private fun executeTerminalCommand(
-        call: MethodCall,
-        result: MethodChannel.Result,
-        requireRoot: Boolean
-    ) {
-        val command = call.argument<String>("command")?.trim()
+    
+private fun executeTerminalCommand(
+    call: MethodCall,
+    result: MethodChannel.Result,
+    requireRoot: Boolean
+) {
+    val command = call.argument<String>("command")
+        ?.trim()
+        ?.lowercase()
 
-        if (command.isNullOrBlank()) {
-            result.error(
-                "INVALID_COMMAND",
-                "Enter a command first.",
-                null
-            )
-            return
-        }
-
-        val allowedCommands = setOf(
-            "help",
-            "id",
-            "whoami",
-            "uname -a",
-            "getprop",
-            "df -h",
-            "cat /proc/meminfo",
-            "dumpsys battery",
-            "pm list packages"
+    if (command.isNullOrBlank()) {
+        result.error(
+            "INVALID_COMMAND",
+            "Enter a command first.",
+            null
         )
+        return
+    }
 
-        if (command !in allowedCommands) {
-            result.error(
-                "COMMAND_NOT_ALLOWED",
-                "This command is not yet enabled. Type help to see the supported commands.",
-                null
+    data class DiagnosticCommand(
+        val shellCommand: String,
+        val description: String
+    )
+
+    val commands = linkedMapOf(
+        "id" to DiagnosticCommand(
+            "id",
+            "Show the current shell user and permissions."
+        ),
+        "whoami" to DiagnosticCommand(
+            "whoami",
+            "Show the current username."
+        ),
+        "uname -a" to DiagnosticCommand(
+            "uname -a",
+            "Show kernel and system information."
+        ),
+        "getprop" to DiagnosticCommand(
+            "getprop",
+            "List Android system properties."
+        ),
+        "df -h" to DiagnosticCommand(
+            "df -h",
+            "Show filesystem storage usage."
+        ),
+        "cat /proc/meminfo" to DiagnosticCommand(
+            "cat /proc/meminfo",
+            "Show detailed memory information."
+        ),
+        "dumpsys battery" to DiagnosticCommand(
+            "dumpsys battery",
+            "Inspect battery status and properties."
+        ),
+        "pm list packages" to DiagnosticCommand(
+            "pm list packages",
+            "List installed application packages."
+        ),
+        "device-model" to DiagnosticCommand(
+            "getprop ro.product.model",
+            "Show the device model."
+        ),
+        "manufacturer" to DiagnosticCommand(
+            "getprop ro.product.manufacturer",
+            "Show the manufacturer."
+        ),
+        "device-brand" to DiagnosticCommand(
+            "getprop ro.product.brand",
+            "Show the device brand."
+        ),
+        "android-version" to DiagnosticCommand(
+            "getprop ro.build.version.release",
+            "Show the Android version."
+        ),
+        "sdk-version" to DiagnosticCommand(
+            "getprop ro.build.version.sdk",
+            "Show the Android SDK version."
+        ),
+        "security-patch" to DiagnosticCommand(
+            "getprop ro.build.version.security_patch",
+            "Show the Android security patch date."
+        ),
+        "build-fingerprint" to DiagnosticCommand(
+            "getprop ro.build.fingerprint",
+            "Show the device build fingerprint."
+        ),
+        "cpu-architecture" to DiagnosticCommand(
+            "getprop ro.product.cpu.abi",
+            "Show the primary CPU architecture."
+        ),
+        "kernel-version" to DiagnosticCommand(
+            "cat /proc/version",
+            "Show detailed Linux kernel version."
+        ),
+        "cpu-info" to DiagnosticCommand(
+            "cat /proc/cpuinfo",
+            "Inspect available CPU information."
+        ),
+        "partitions" to DiagnosticCommand(
+            "cat /proc/partitions",
+            "List detected storage partitions."
+        ),
+        "uptime" to DiagnosticCommand(
+            "cat /proc/uptime",
+            "Show time since the device booted."
+        ),
+        "processes" to DiagnosticCommand(
+            "ps -A",
+            "List running processes."
+        ),
+        "ip-addresses" to DiagnosticCommand(
+            "ip addr show",
+            "Inspect network interfaces and IP addresses."
+        ),
+        "connectivity" to DiagnosticCommand(
+            "dumpsys connectivity",
+            "Inspect Android connectivity services."
+        ),
+        "wifi-status" to DiagnosticCommand(
+            "dumpsys wifi",
+            "Inspect Wi-Fi service information."
+        ),
+        "bluetooth-status" to DiagnosticCommand(
+            "dumpsys bluetooth_manager",
+            "Inspect Bluetooth service information."
+        ),
+        "usb-status" to DiagnosticCommand(
+            "dumpsys usb",
+            "Inspect USB service information."
+        ),
+        "display-info" to DiagnosticCommand(
+            "dumpsys display",
+            "Inspect display configuration."
+        ),
+        "thermal-status" to DiagnosticCommand(
+            "dumpsys thermalservice",
+            "Inspect thermal service information."
+        ),
+        "power-info" to DiagnosticCommand(
+            "dumpsys power",
+            "Inspect Android power management."
+        ),
+        "sensor-info" to DiagnosticCommand(
+            "dumpsys sensorservice",
+            "Inspect available sensor service information."
+        ),
+        "system-packages" to DiagnosticCommand(
+            "pm list packages -s",
+            "List system packages."
+        ),
+        "third-party-packages" to DiagnosticCommand(
+            "pm list packages -3",
+            "List third-party applications."
+        ),
+        "disabled-packages" to DiagnosticCommand(
+            "pm list packages -d",
+            "List disabled packages."
+        ),
+        "enabled-packages" to DiagnosticCommand(
+            "pm list packages -e",
+            "List enabled packages."
+        ),
+        "boot-reason" to DiagnosticCommand(
+            "getprop sys.boot.reason",
+            "Show the reported boot reason."
+        ),
+        "selinux-status" to DiagnosticCommand(
+            "getenforce",
+            "Show SELinux enforcement status."
+        ),
+        "activity-processes" to DiagnosticCommand(
+            "dumpsys activity processes",
+            "Inspect Android activity processes."
+        )
+    )
+
+    if (command == "help") {
+        val help = buildString {
+            appendLine("ULTIMATE DEBUGGING TOOL")
+            appendLine(
+                if (requireRoot) "ROOT MODE" else "ADB MODE"
             )
-            return
+            appendLine()
+            appendLine("AVAILABLE READ-ONLY DIAGNOSTICS")
+            appendLine()
+
+            commands.forEach { (name, details) ->
+                appendLine(
+                    "${name.padEnd(23)} - ${details.description}"
+                )
+            }
+
+            appendLine()
+            appendLine(
+                "These commands inspect device information."
+            )
+            appendLine(
+                "They do not perform repairs or modify settings."
+            )
+            appendLine(
+                "Some results depend on Android version and manufacturer."
+            )
         }
 
-        if (command == "help") {
-            result.success(
-                """
-                ULTIMATE DEBUGGING TOOL
-                ${if (requireRoot) "ROOT MODE" else "ADB MODE"}
+        result.success(help)
+        return
+    }
 
-                Available diagnostic commands:
+    val selectedCommand = commands[command]
 
-                help
-                id
-                whoami
-                uname -a
-                getprop
-                df -h
-                cat /proc/meminfo
-                dumpsys battery
-                pm list packages
+    if (selectedCommand == null) {
+        result.error(
+            "COMMAND_NOT_ALLOWED",
+            "Command not supported. Type help to see available commands.",
+            null
+        )
+        return
+    }
 
-                Only approved read-only diagnostic commands are enabled.
-                """.trimIndent()
-            )
-            return
-        }
+    try {
+        terminalExecutor.execute {
 
-        try {
-            terminalExecutor.execute {
+            try {
+                val usbConnected =
+                    adbConnection?.isConnected() == true
 
-                try {
-                    val usbConnected =
-                        adbConnection?.isConnected() == true
+                val wirelessConnected =
+                    wirelessStatus == "CONNECTED" &&
+                        wirelessManager?.getConnectionInfo()?.state ==
+                        AdbConnection.State.CONNECTED
 
-                    val wirelessConnected =
-                        wirelessStatus == "CONNECTED" &&
-                            wirelessManager?.getConnectionInfo()?.state ==
-                            AdbConnection.State.CONNECTED
+                if (usbConnected && wirelessConnected) {
+                    throw IOException(
+                        "Both USB and Wireless ADB are connected. Disconnect one connection first."
+                    )
+                }
 
-                    if (usbConnected && wirelessConnected) {
-                        throw IOException(
-                            "Both USB and Wireless ADB are connected. Disconnect one connection first."
-                        )
-                    }
+                if (!usbConnected && !wirelessConnected) {
+                    throw IOException(
+                        "No authenticated ADB connection. Connect a device using USB or Wireless ADB first."
+                    )
+                }
 
-                    if (!usbConnected && !wirelessConnected) {
-                        throw IOException(
-                            "No authenticated ADB connection. Connect a device using USB or Wireless ADB first."
-                        )
-                    }
-
-                    fun executeAdbShell(
-                        shellCommand: String
-                    ): AdbShellSession.CommandResult {
-                        return if (usbConnected) {
-                            adbConnection!!
-                                .createShellSession()
-                                .execute(shellCommand, 30000L)
-                        } else {
-                            wirelessManager!!
-                                .executeCommand(shellCommand, 30000L)
-                        }
-                    }
-
-                    fun shellQuote(value: String): String {
-                        return "'" + value.replace(
-                            "'",
-                            "'\\''"
-                        ) + "'"
-                    }
-
-                    if (requireRoot) {
-                        val rootCheck = executeAdbShell(
-                            "su -c ${shellQuote("id")}"
-                        )
-
-                        if (
-                            rootCheck.exitCode != 0 ||
-                            !rootCheck.output.contains("uid=0")
-                        ) {
-                            throw IOException(
-                                "Root access was not granted. This device may not be rooted, or the root permission request was denied."
-                            )
-                        }
-                    }
-
-                    val shellCommand = if (requireRoot) {
-                        "su -c ${shellQuote(command)}"
+                fun executeAdbShell(
+                    shellCommand: String
+                ): AdbShellSession.CommandResult {
+                    return if (usbConnected) {
+                        adbConnection!!
+                            .createShellSession()
+                            .execute(shellCommand, 30000L)
                     } else {
-                        command
+                        wirelessManager!!
+                            .executeCommand(shellCommand, 30000L)
                     }
+                }
 
-                    val commandResult =
-                        executeAdbShell(shellCommand)
+                fun shellQuote(value: String): String {
+                    return "'" + value.replace(
+                        "'",
+                        "'\\''"
+                    ) + "'"
+                }
 
-                    val output = buildString {
-                        append(commandResult.output)
-
-                        if (commandResult.errorOutput.isNotBlank()) {
-                            if (isNotEmpty()) append("\n")
-                            append("ERROR:\n")
-                            append(commandResult.errorOutput)
-                        }
-
-                        if (commandResult.exitCode != null) {
-                            if (isNotEmpty()) append("\n\n")
-                            append("Exit code: ")
-                            append(commandResult.exitCode)
-                        }
-                    }.ifBlank {
-                        "Command completed without output."
-                    }
-
-                    mainHandler.post {
-                        result.success(output)
-                    }
-
-                } catch (e: Exception) {
-                    Log.e(
-                        TAG,
-                        "Terminal command execution failed",
-                        e
+                if (requireRoot) {
+                    val rootCheck = executeAdbShell(
+                        "su -c ${shellQuote("id")}"
                     )
 
-                    mainHandler.post {
-                        result.error(
-                            "TERMINAL_EXECUTION_ERROR",
-                            e.message ?: "Terminal command failed.",
-                            null
+                    if (
+                        rootCheck.exitCode != 0 ||
+                        !rootCheck.output.contains("uid=0")
+                    ) {
+                        throw IOException(
+                            "Root access was not granted. This device may not be rooted, or the root permission request was denied."
                         )
                     }
                 }
+
+                val shellCommand = if (requireRoot) {
+                    "su -c ${shellQuote(selectedCommand.shellCommand)}"
+                } else {
+                    selectedCommand.shellCommand
+                }
+
+                val commandResult =
+                    executeAdbShell(shellCommand)
+
+                val output = buildString {
+                    append(commandResult.output)
+
+                    if (commandResult.errorOutput.isNotBlank()) {
+                        if (isNotEmpty()) append("\n")
+                        append("ERROR:\n")
+                        append(commandResult.errorOutput)
+                    }
+
+                    if (commandResult.exitCode != null) {
+                        if (isNotEmpty()) append("\n\n")
+                        append("Exit code: ")
+                        append(commandResult.exitCode)
+                    }
+                }.ifBlank {
+                    "Command completed without output."
+                }
+
+                mainHandler.post {
+                    result.success(output)
+                }
+
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Terminal command execution failed",
+                    e
+                )
+
+                mainHandler.post {
+                    result.error(
+                        "TERMINAL_EXECUTION_ERROR",
+                        e.message ?: "Terminal command failed.",
+                        null
+                    )
+                }
             }
-        } catch (e: Exception) {
-            result.error(
-                "TERMINAL_EXECUTION_ERROR",
-                e.message ?: "Unable to schedule terminal command.",
-                null
-            )
         }
+    } catch (e: Exception) {
+        result.error(
+            "TERMINAL_EXECUTION_ERROR",
+            e.message ?: "Unable to start terminal command.",
+            null
+        )
     }
+}
+
 
     private fun connectAdb(
         call: MethodCall,
