@@ -1262,6 +1262,1115 @@ override fun configureFlutterEngine(
                 """.trimIndent()
             }
 
+            
+            "memory" -> {
+
+                val activityManager =
+                    getSystemService(Context.ACTIVITY_SERVICE)
+                        as ActivityManager
+
+                val systemMemory =
+                    ActivityManager.MemoryInfo()
+
+                activityManager.getMemoryInfo(systemMemory)
+
+                val processMemory =
+                    android.os.Debug.MemoryInfo()
+
+                android.os.Debug.getMemoryInfo(processMemory)
+
+                val runtime =
+                    Runtime.getRuntime()
+
+                val totalRAM =
+                    systemMemory.totalMem
+
+                val availableRAM =
+                    systemMemory.availMem
+
+                val usedRAM =
+                    totalRAM - availableRAM
+
+                val appHeapUsed =
+                    runtime.totalMemory() - runtime.freeMemory()
+
+                val appHeapMax =
+                    runtime.maxMemory()
+
+                fun formatMemory(bytes: Long): String {
+                    return "%.2f MB".format(
+                        bytes / (1024.0 * 1024.0)
+                    )
+                }
+
+                val totalPss =
+                    processMemory.totalPss * 1024L
+
+                val dalvikPss =
+                    processMemory.dalvikPss * 1024L
+
+                val nativePss =
+                    processMemory.nativePss * 1024L
+
+                val otherPss =
+                    processMemory.otherPss * 1024L
+
+                val memoryUsagePercent =
+                    if (totalRAM > 0) {
+                        usedRAM * 100.0 / totalRAM
+                    } else {
+                        0.0
+                    }
+
+                val assessment =
+                    mutableListOf<String>()
+
+                if (systemMemory.lowMemory) {
+                    assessment.add(
+                        "WARNING: Android reports a low-memory condition."
+                    )
+                }
+
+                if (memoryUsagePercent >= 90.0) {
+                    assessment.add(
+                        "HIGH: System RAM usage is at least 90%."
+                    )
+                } else if (memoryUsagePercent >= 80.0) {
+                    assessment.add(
+                        "NOTICE: System RAM usage is elevated."
+                    )
+                }
+
+                if (
+                    availableRAM < systemMemory.threshold
+                ) {
+                    assessment.add(
+                        "WARNING: Available RAM is below Android's memory threshold."
+                    )
+                }
+
+                if (assessment.isEmpty()) {
+                    assessment.add(
+                        "No immediate system memory pressure warning detected."
+                    )
+                }
+
+                """
+                ADVANCED RAM AND MEMORY DIAGNOSTIC REPORT
+
+                ==========================================
+                1. SYSTEM RAM
+                ==========================================
+
+                Total Physical RAM: ${formatMemory(totalRAM)}
+                Used RAM Estimate: ${formatMemory(usedRAM)}
+                Available RAM: ${formatMemory(availableRAM)}
+                Memory Usage: ${"%.2f".format(memoryUsagePercent)}%
+                Android Memory Threshold: ${
+                    formatMemory(systemMemory.threshold)
+                }
+                Low Memory Condition: ${systemMemory.lowMemory}
+
+                ==========================================
+                2. APPLICATION MEMORY
+                ==========================================
+
+                Application Process ID: ${android.os.Process.myPid()}
+                Application PSS: ${formatMemory(totalPss)}
+                Dalvik PSS: ${formatMemory(dalvikPss)}
+                Native PSS: ${formatMemory(nativePss)}
+                Other PSS: ${formatMemory(otherPss)}
+
+                ==========================================
+                3. APPLICATION HEAP
+                ==========================================
+
+                Heap Currently Allocated: ${formatMemory(runtime.totalMemory())}
+                Heap Currently Used: ${formatMemory(appHeapUsed)}
+                Heap Maximum: ${formatMemory(appHeapMax)}
+                Application Memory Class: ${
+                    activityManager.memoryClass
+                } MB
+                Large Memory Class: ${
+                    activityManager.largeMemoryClass
+                } MB
+
+                ==========================================
+                4. NATIVE MEMORY
+                ==========================================
+
+                Native Heap Allocated: ${
+                    formatMemory(
+                        android.os.Debug.getNativeHeapAllocatedSize()
+                    )
+                }
+                Native Heap Free: ${
+                    formatMemory(
+                        android.os.Debug.getNativeHeapFreeSize()
+                    )
+                }
+                Native Heap Capacity: ${
+                    formatMemory(
+                        android.os.Debug.getNativeHeapSize()
+                    )
+                }
+
+                ==========================================
+                5. TECHNICIAN ASSESSMENT
+                ==========================================
+
+                ${assessment.joinToString("\n") { "- $it" }}
+
+                ==========================================
+                6. DIAGNOSTIC LIMITATIONS
+                ==========================================
+
+                Application PSS and heap readings describe this
+                diagnostic application's memory consumption.
+
+                Android restricts access to detailed memory
+                information belonging to other applications.
+
+                High RAM usage alone does not prove a fault.
+                Android uses available RAM for caching and
+                application performance.
+
+                Do not terminate system processes based only
+                on these readings.
+
+                """.trimIndent()
+            }
+
+            
+            "security" -> {
+
+                fun readSecurityProperty(name: String): String {
+                    return try {
+                        val process = Runtime.getRuntime().exec(
+                            arrayOf("getprop", name)
+                        )
+
+                        val value = process.inputStream
+                            .bufferedReader()
+                            .use { it.readText().trim() }
+
+                        process.waitFor()
+
+                        value.ifBlank { "Unavailable" }
+                    } catch (e: Exception) {
+                        "Unavailable"
+                    }
+                }
+
+                val securityPatch =
+                    Build.VERSION.SECURITY_PATCH
+
+                val selinuxStatus = try {
+                    val file =
+                        java.io.File("/sys/fs/selinux/enforce")
+
+                    if (file.canRead()) {
+                        when (file.readText().trim()) {
+                            "1" -> "Enforcing"
+                            "0" -> "Permissive"
+                            else -> "Unknown"
+                        }
+                    } else {
+                        "Unavailable to application"
+                    }
+                } catch (e: Exception) {
+                    "Unavailable to application"
+                }
+
+                val verifiedBoot =
+                    readSecurityProperty(
+                        "ro.boot.verifiedbootstate"
+                    )
+
+                val flashLocked =
+                    readSecurityProperty(
+                        "ro.boot.flash.locked"
+                    )
+
+                val vbmetaState =
+                    readSecurityProperty(
+                        "ro.boot.vbmeta.device_state"
+                    )
+
+                val vbmetaDigest =
+                    readSecurityProperty(
+                        "ro.boot.vbmeta.digest"
+                    )
+
+                val encryptionState =
+                    readSecurityProperty(
+                        "ro.crypto.state"
+                    )
+
+                val encryptionType =
+                    readSecurityProperty(
+                        "ro.crypto.type"
+                    )
+
+                val debuggable =
+                    readSecurityProperty(
+                        "ro.debuggable"
+                    )
+
+                val secureProperty =
+                    readSecurityProperty(
+                        "ro.secure"
+                    )
+
+                val adbEnabled =
+                    readSecurityProperty(
+                        "persist.sys.usb.config"
+                    )
+
+                val buildType = Build.TYPE
+                val buildTags = Build.TAGS
+
+                val assessment =
+                    mutableListOf<String>()
+
+                if (selinuxStatus == "Permissive") {
+                    assessment.add(
+                        "WARNING: SELinux is in permissive mode."
+                    )
+                }
+
+                if (verifiedBoot == "orange") {
+                    assessment.add(
+                        "WARNING: Verified Boot reports an unlocked or modified boot state."
+                    )
+                } else if (verifiedBoot == "red") {
+                    assessment.add(
+                        "CRITICAL: Verified Boot reports a verification failure."
+                    )
+                } else if (verifiedBoot == "yellow") {
+                    assessment.add(
+                        "NOTICE: Verified Boot reports a user-set trust configuration."
+                    )
+                }
+
+                if (flashLocked == "0") {
+                    assessment.add(
+                        "WARNING: Bootloader reports an unlocked state."
+                    )
+                }
+
+                if (debuggable == "1") {
+                    assessment.add(
+                        "NOTICE: Build is marked debuggable."
+                    )
+                }
+
+                if (buildType != "user") {
+                    assessment.add(
+                        "NOTICE: Build type is not the standard user release type."
+                    )
+                }
+
+                if (assessment.isEmpty()) {
+                    assessment.add(
+                        "No immediate security warning detected from available indicators."
+                    )
+                }
+
+                """
+                ADVANCED ANDROID SECURITY REPORT
+
+                ==========================================
+                1. ANDROID SECURITY PATCH
+                ==========================================
+
+                Security Patch Level: ${
+                    securityPatch.ifBlank { "Unavailable" }
+                }
+                Android Version: ${Build.VERSION.RELEASE}
+                SDK Version: ${Build.VERSION.SDK_INT}
+
+                ==========================================
+                2. VERIFIED BOOT
+                ==========================================
+
+                Verified Boot State: $verifiedBoot
+                Bootloader Flash Lock: $flashLocked
+                VBMeta Device State: $vbmetaState
+                VBMeta Digest: $vbmetaDigest
+
+                ==========================================
+                3. SYSTEM SECURITY
+                ==========================================
+
+                SELinux Status: $selinuxStatus
+                Secure Property: $secureProperty
+                Debuggable Property: $debuggable
+                Build Type: $buildType
+                Build Tags: $buildTags
+
+                ==========================================
+                4. DATA ENCRYPTION
+                ==========================================
+
+                Encryption State: $encryptionState
+                Encryption Type: $encryptionType
+
+                ==========================================
+                5. DEBUGGING CONFIGURATION
+                ==========================================
+
+                USB Configuration: $adbEnabled
+
+                Note: This property does not prove that
+                USB debugging is currently authorized.
+
+                ==========================================
+                6. TECHNICIAN ASSESSMENT
+                ==========================================
+
+                ${assessment.joinToString("\n") { "- $it" }}
+
+                ==========================================
+                7. SECURITY DIAGNOSTIC LIMITATIONS
+                ==========================================
+
+                Some boot and encryption properties are
+                restricted by Android or manufacturer policy.
+
+                Unavailable values do not prove that a
+                security feature is disabled.
+
+                This report does not perform a malware scan,
+                exploit test, certificate validation or
+                complete hardware-backed attestation.
+
+                Do not unlock the bootloader or disable
+                security protections as a diagnostic shortcut.
+
+                """.trimIndent()
+            }
+
+            
+            "network" -> {
+
+                val connectivityManager =
+                    getSystemService(Context.CONNECTIVITY_SERVICE)
+                        as android.net.ConnectivityManager
+
+                val activeNetwork =
+                    connectivityManager.activeNetwork
+
+                val networkCapabilities =
+                    activeNetwork?.let {
+                        connectivityManager.getNetworkCapabilities(it)
+                    }
+
+                val connectionType = when {
+                    networkCapabilities?.hasTransport(
+                        android.net.NetworkCapabilities.TRANSPORT_WIFI
+                    ) == true -> "Wi-Fi"
+
+                    networkCapabilities?.hasTransport(
+                        android.net.NetworkCapabilities.TRANSPORT_CELLULAR
+                    ) == true -> "Mobile Data"
+
+                    networkCapabilities?.hasTransport(
+                        android.net.NetworkCapabilities.TRANSPORT_ETHERNET
+                    ) == true -> "Ethernet"
+
+                    networkCapabilities?.hasTransport(
+                        android.net.NetworkCapabilities.TRANSPORT_VPN
+                    ) == true -> "VPN"
+
+                    else -> "Disconnected or unavailable"
+                }
+
+                val internetCapability =
+                    networkCapabilities?.hasCapability(
+                        android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET
+                    ) == true
+
+                val validatedInternet =
+                    networkCapabilities?.hasCapability(
+                        android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED
+                    ) == true
+
+                val metered =
+                    connectivityManager.isActiveNetworkMetered
+
+                val vpnActive =
+                    networkCapabilities?.hasTransport(
+                        android.net.NetworkCapabilities.TRANSPORT_VPN
+                    ) == true
+
+                val wifiManager =
+                    applicationContext.getSystemService(
+                        Context.WIFI_SERVICE
+                    ) as android.net.wifi.WifiManager
+
+                val wifiEnabled = wifiManager.isWifiEnabled
+
+                val wifiInfo = try {
+                    wifiManager.connectionInfo
+                } catch (e: Exception) {
+                    null
+                }
+
+                val wifiSSID =
+                    wifiInfo?.ssid
+                        ?.takeIf {
+                            it != "<unknown ssid>" && it.isNotBlank()
+                        } ?: "Unavailable or permission restricted"
+
+                val wifiBSSID =
+                    wifiInfo?.bssid
+                        ?.takeIf {
+                            it.isNotBlank()
+                        } ?: "Unavailable or permission restricted"
+
+                val wifiSignal =
+                    wifiInfo?.rssi ?: -127
+
+                val wifiLinkSpeed =
+                    wifiInfo?.linkSpeed ?: -1
+
+                val wifiFrequency =
+                    wifiInfo?.frequency ?: -1
+
+                val wifiSignalQuality = when {
+                    wifiSignal >= -50 -> "Excellent"
+                    wifiSignal >= -60 -> "Very good"
+                    wifiSignal >= -67 -> "Good"
+                    wifiSignal >= -70 -> "Fair"
+                    wifiSignal >= -80 -> "Weak"
+                    wifiSignal > -127 -> "Very weak"
+                    else -> "Unavailable"
+                }
+
+                val networkInterfaces = try {
+                    java.net.NetworkInterface
+                        .getNetworkInterfaces()
+                        ?.toList()
+                        ?.filter { it.isUp }
+                        ?.joinToString("\n") { networkInterface ->
+
+                            val addresses =
+                                networkInterface.inetAddresses
+                                    .toList()
+                                    .joinToString(", ") {
+                                        it.hostAddress ?: "Unknown"
+                                    }
+
+                            """
+                            Interface: ${networkInterface.name}
+                            Display Name: ${networkInterface.displayName}
+                            Addresses: $addresses
+                            Loopback: ${networkInterface.isLoopback}
+                            """.trimIndent()
+                        } ?: "Unavailable"
+                } catch (e: Exception) {
+                    "Network interface information unavailable."
+                }
+
+                val dnsServers = try {
+                    java.net.InetAddress
+                        .getAllByName("localhost")
+                        .joinToString("\n") {
+                            it.hostAddress ?: "Unknown"
+                        }
+                } catch (e: Exception) {
+                    "Unavailable"
+                }
+
+                val assessment =
+                    mutableListOf<String>()
+
+                if (activeNetwork == null) {
+                    assessment.add(
+                        "No active network connection detected."
+                    )
+                }
+
+                if (activeNetwork != null && !validatedInternet) {
+                    assessment.add(
+                        "Network is connected but Android has not validated internet access."
+                    )
+                }
+
+                if (connectionType == "Wi-Fi" && wifiSignal < -70) {
+                    assessment.add(
+                        "Wi-Fi signal is weak. Inspect distance, interference and router condition."
+                    )
+                }
+
+                if (vpnActive) {
+                    assessment.add(
+                        "VPN transport is active. It may affect routing or connectivity."
+                    )
+                }
+
+                if (assessment.isEmpty()) {
+                    assessment.add(
+                        "No immediate network warning detected from available indicators."
+                    )
+                }
+
+                """
+                ADVANCED NETWORK DIAGNOSTIC REPORT
+
+                ==========================================
+                1. CONNECTION STATUS
+                ==========================================
+
+                Connection Type: $connectionType
+                Active Network: ${activeNetwork != null}
+                Internet Capability: $internetCapability
+                Internet Validated: $validatedInternet
+                Metered Connection: $metered
+                VPN Active: $vpnActive
+
+                ==========================================
+                2. WI-FI DIAGNOSTICS
+                ==========================================
+
+                Wi-Fi Enabled: $wifiEnabled
+                Network Name: $wifiSSID
+                Access Point BSSID: $wifiBSSID
+                Signal Strength: $wifiSignal dBm
+                Signal Quality: $wifiSignalQuality
+                Link Speed: ${
+                    if (wifiLinkSpeed >= 0) "$wifiLinkSpeed Mbps"
+                    else "Unavailable"
+                }
+                Frequency: ${
+                    if (wifiFrequency > 0) "$wifiFrequency MHz"
+                    else "Unavailable"
+                }
+
+                ==========================================
+                3. IP AND NETWORK INTERFACES
+                ==========================================
+
+                $networkInterfaces
+
+                ==========================================
+                4. DNS INFORMATION
+                ==========================================
+
+                Localhost Resolution:
+                $dnsServers
+
+                DNS server configuration may be restricted
+                by Android and is not fully exposed here.
+
+                ==========================================
+                5. TECHNICIAN ASSESSMENT
+                ==========================================
+
+                ${assessment.joinToString("\n") { "- $it" }}
+
+                ==========================================
+                6. DIAGNOSTIC LIMITATIONS
+                ==========================================
+
+                Android may restrict Wi-Fi SSID, BSSID and
+                detailed network information without location
+                or nearby Wi-Fi permissions.
+
+                Internet validation does not guarantee that
+                every website or application is reachable.
+
+                This report does not modify network settings,
+                reset connections or disconnect the VPN.
+
+                """.trimIndent()
+            }
+
+            
+            "technician-suite" -> {
+
+                fun readProperty(name: String): String {
+                    return try {
+                        val process = Runtime.getRuntime().exec(
+                            arrayOf("getprop", name)
+                        )
+                        val value = process.inputStream
+                            .bufferedReader()
+                            .use { it.readText().trim() }
+                        process.waitFor()
+                        value.ifBlank { "Unavailable" }
+                    } catch (e: Exception) {
+                        "Unavailable"
+                    }
+                }
+
+                fun readFile(path: String): String {
+                    return try {
+                        val file = java.io.File(path)
+                        if (file.canRead()) {
+                            file.readText().trim()
+                                .ifBlank { "Unavailable" }
+                        } else {
+                            "Restricted or unavailable"
+                        }
+                    } catch (e: Exception) {
+                        "Unavailable"
+                    }
+                }
+
+                // CPU AND PERFORMANCE
+
+                val cpuCount =
+                    Runtime.getRuntime().availableProcessors()
+
+                val cpuOnline =
+                    readFile("/sys/devices/system/cpu/online")
+
+                val cpuLoad =
+                    readFile("/proc/loadavg")
+
+                val cpuFrequencies = (0..cpuCount.coerceAtMost(15))
+                    .map { index ->
+                        val path =
+                            "/sys/devices/system/cpu/cpu$index/cpufreq/scaling_cur_freq"
+
+                        val value = readFile(path)
+
+                        if (value != "Unavailable" &&
+                            value != "Restricted or unavailable"
+                        ) {
+                            "CPU $index: ${
+                                try {
+                                    "%.2f MHz".format(
+                                        value.toLong() / 1000.0
+                                    )
+                                } catch (e: Exception) {
+                                    value
+                                }
+                            }"
+                        } else {
+                            "CPU $index: Frequency unavailable"
+                        }
+                    }.joinToString("\n")
+
+                // THERMAL INFORMATION
+
+                val sensorManager =
+                    getSystemService(Context.SENSOR_SERVICE)
+                        as android.hardware.SensorManager
+
+                val temperatureSensors =
+                    sensorManager.getSensorList(
+                        android.hardware.Sensor.TYPE_ALL
+                    ).filter {
+                        it.type ==
+                            android.hardware.Sensor.TYPE_AMBIENT_TEMPERATURE
+                    }.joinToString("\n") {
+                        "${it.name} | ${it.vendor}"
+                    }.ifBlank {
+                        "No ambient temperature sensors exposed."
+                    }
+
+                val powerManager =
+                    getSystemService(Context.POWER_SERVICE)
+                        as android.os.PowerManager
+
+                val thermalStatus =
+                    if (Build.VERSION.SDK_INT >= 29) {
+                        when (powerManager.currentThermalStatus) {
+                            android.os.PowerManager.THERMAL_STATUS_NONE ->
+                                "No thermal throttling reported"
+
+                            android.os.PowerManager.THERMAL_STATUS_LIGHT ->
+                                "Light thermal condition"
+
+                            android.os.PowerManager.THERMAL_STATUS_MODERATE ->
+                                "Moderate thermal condition"
+
+                            android.os.PowerManager.THERMAL_STATUS_SEVERE ->
+                                "Severe thermal condition"
+
+                            android.os.PowerManager.THERMAL_STATUS_CRITICAL ->
+                                "Critical thermal condition"
+
+                            android.os.PowerManager.THERMAL_STATUS_EMERGENCY ->
+                                "Emergency thermal condition"
+
+                            android.os.PowerManager.THERMAL_STATUS_SHUTDOWN ->
+                                "Thermal shutdown status"
+
+                            else -> "Unknown"
+                        }
+                    } else {
+                        "Not exposed on this Android version"
+                    }
+
+                // APPLICATION INVENTORY
+
+                val installedApps =
+                    packageManager.getInstalledApplications(0)
+
+                val enabledApps =
+                    installedApps.count {
+                        packageManager.getApplicationEnabledSetting(
+                            it.packageName
+                        ) !=
+                            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED &&
+                        packageManager.getApplicationEnabledSetting(
+                            it.packageName
+                        ) !=
+                            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER &&
+                        it.enabled
+                    }
+
+                val systemApps =
+                    installedApps.count {
+                        (it.flags and
+                            android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                    }
+
+                val userApps =
+                    installedApps.size - systemApps
+
+                val disabledApps =
+                    installedApps.count {
+                        !it.enabled
+                    }
+
+                // RUNNING PROCESSES
+
+                val activityManager =
+                    getSystemService(Context.ACTIVITY_SERVICE)
+                        as ActivityManager
+
+                val runningProcesses =
+                    activityManager.runningAppProcesses
+
+                val processReport =
+                    runningProcesses
+                        ?.take(30)
+                        ?.joinToString("\n") {
+                            "${it.processName} | PID: ${it.pid} | Importance: ${it.importance}"
+                        } ?: "Process information restricted."
+
+                // USB HARDWARE
+
+                val usbManager =
+                    getSystemService(Context.USB_SERVICE)
+                        as android.hardware.usb.UsbManager
+
+                val usbDevices =
+                    usbManager.deviceList.values
+
+                val usbReport =
+                    usbDevices.joinToString("\n") { device ->
+                        """
+                        Device: ${device.deviceName}
+                        Manufacturer ID: ${device.vendorId}
+                        Product ID: ${device.productId}
+                        Interfaces: ${device.interfaceCount}
+                        """.trimIndent()
+                    }.ifBlank {
+                        "No external USB devices detected."
+                    }
+
+                val usbHostSupported =
+                    packageManager.hasSystemFeature(
+                        android.content.pm.PackageManager.FEATURE_USB_HOST
+                    )
+
+                // AUDIO HARDWARE
+
+                val audioManager =
+                    getSystemService(Context.AUDIO_SERVICE)
+                        as android.media.AudioManager
+
+                val audioDevices =
+                    if (Build.VERSION.SDK_INT >= 23) {
+                        audioManager.getDevices(
+                            android.media.AudioManager.GET_DEVICES_ALL
+                        ).joinToString("\n") {
+                            "${it.productName} | Type: ${it.type} | Source: ${it.isSource} | Sink: ${it.isSink}"
+                        }
+                    } else {
+                        "Audio device enumeration unsupported."
+                    }.ifBlank {
+                        "No audio devices exposed."
+                    }
+
+                // DISPLAY AND TOUCH
+
+                val displayMetrics =
+                    resources.displayMetrics
+
+                val display =
+                    windowManager.defaultDisplay
+
+                val refreshRate =
+                    display.refreshRate
+
+                val touchSupported =
+                    packageManager.hasSystemFeature(
+                        android.content.pm.PackageManager.FEATURE_TOUCHSCREEN
+                    )
+
+                val multitouchSupported =
+                    packageManager.hasSystemFeature(
+                        android.content.pm.PackageManager.FEATURE_TOUCHSCREEN_MULTITOUCH
+                    )
+
+                // CAMERA HARDWARE
+
+                val cameraManager =
+                    getSystemService(Context.CAMERA_SERVICE)
+                        as android.hardware.camera2.CameraManager
+
+                val cameraReport = try {
+                    cameraManager.cameraIdList.joinToString("\n") { id ->
+
+                        val characteristics =
+                            cameraManager.getCameraCharacteristics(id)
+
+                        val facing =
+                            characteristics.get(
+                                android.hardware.camera2.CameraCharacteristics.LENS_FACING
+                            )
+
+                        val facingName = when (facing) {
+                            android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT ->
+                                "Front"
+
+                            android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK ->
+                                "Back"
+
+                            android.hardware.camera2.CameraCharacteristics.LENS_FACING_EXTERNAL ->
+                                "External"
+
+                            else -> "Unknown"
+                        }
+
+                        val hardwareLevel =
+                            characteristics.get(
+                                android.hardware.camera2.CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL
+                            )
+
+                        "Camera ID: $id | Facing: $facingName | Hardware Level: $hardwareLevel"
+                    }.ifBlank {
+                        "No camera devices exposed."
+                    }
+                } catch (e: Exception) {
+                    "Camera information unavailable: ${e.message}"
+                }
+
+                // BOOT AND SOFTWARE UPDATE INFORMATION
+
+                val bootCompleted =
+                    readProperty("sys.boot_completed")
+
+                val bootSlot =
+                    readProperty("ro.boot.slot_suffix")
+
+                val bootMode =
+                    readProperty("ro.bootmode")
+
+                val otaVersion =
+                    readProperty("ro.build.version.ota")
+
+                val buildDate =
+                    readProperty("ro.build.date")
+
+                val buildDateUtc =
+                    readProperty("ro.build.date.utc")
+
+                val bootReason =
+                    readProperty("ro.boot.bootreason")
+
+                val updateEngine =
+                    readProperty("ro.build.version.incremental")
+
+                // TECHNICIAN ASSESSMENT
+
+                val assessment =
+                    mutableListOf<String>()
+
+                if (thermalStatus.contains("Severe") ||
+                    thermalStatus.contains("Critical") ||
+                    thermalStatus.contains("Emergency") ||
+                    thermalStatus.contains("shutdown")
+                ) {
+                    assessment.add(
+                        "WARNING: Android reports a serious thermal condition."
+                    )
+                }
+
+                if (disabledApps > 0) {
+                    assessment.add(
+                        "$disabledApps installed applications are disabled. Review before re-enabling."
+                    )
+                }
+
+                if (usbDevices.isEmpty()) {
+                    assessment.add(
+                        "No external USB device is currently detected. This does not prove USB hardware failure."
+                    )
+                }
+
+                if (assessment.isEmpty()) {
+                    assessment.add(
+                        "No immediate abnormal condition detected from available indicators."
+                    )
+                }
+
+                """
+                ULTIMATE DEBUGGING TOOL
+                ADVANCED TECHNICIAN DIAGNOSTIC SUITE
+
+                ==========================================
+                1. CPU AND PERFORMANCE
+                ==========================================
+
+                Available CPU Cores: $cpuCount
+                Online CPU Cores: $cpuOnline
+
+                CPU Load Average:
+                $cpuLoad
+
+                CPU Frequency Information:
+                $cpuFrequencies
+
+                ==========================================
+                2. THERMAL DIAGNOSTICS
+                ==========================================
+
+                Android Thermal Status:
+                $thermalStatus
+
+                Exposed Temperature Sensors:
+                $temperatureSensors
+
+                ==========================================
+                3. APPLICATION DIAGNOSTICS
+                ==========================================
+
+                Total Installed Applications: ${installedApps.size}
+                System Applications: $systemApps
+                User Applications: $userApps
+                Enabled Applications: $enabledApps
+                Disabled Applications: $disabledApps
+
+                ==========================================
+                4. PROCESS DIAGNOSTICS
+                ==========================================
+
+                Running Processes Visible to Application:
+                ${runningProcesses?.size ?: "Restricted"}
+
+                Process Information:
+                $processReport
+
+                ==========================================
+                5. USB AND HARDWARE
+                ==========================================
+
+                USB Host Supported: $usbHostSupported
+                Connected USB Devices: ${usbDevices.size}
+
+                USB Device Information:
+                $usbReport
+
+                ==========================================
+                6. AUDIO HARDWARE
+                ==========================================
+
+                Audio Mode: ${audioManager.mode}
+                Microphone Mute: ${audioManager.isMicrophoneMute}
+                Music Volume: ${
+                    audioManager.getStreamVolume(
+                        android.media.AudioManager.STREAM_MUSIC
+                    )
+                }
+                Maximum Music Volume: ${
+                    audioManager.getStreamMaxVolume(
+                        android.media.AudioManager.STREAM_MUSIC
+                    )
+                }
+
+                Audio Devices:
+                $audioDevices
+
+                ==========================================
+                7. DISPLAY AND TOUCH
+                ==========================================
+
+                Width: ${displayMetrics.widthPixels} pixels
+                Height: ${displayMetrics.heightPixels} pixels
+                Density: ${displayMetrics.densityDpi} DPI
+                Refresh Rate: ${"%.2f".format(refreshRate)} Hz
+                Touchscreen Supported: $touchSupported
+                Multitouch Supported: $multitouchSupported
+
+                ==========================================
+                8. CAMERA DIAGNOSTICS
+                ==========================================
+
+                $cameraReport
+
+                ==========================================
+                9. BOOT AND UPDATE INFORMATION
+                ==========================================
+
+                Boot Completed: $bootCompleted
+                Boot Slot: $bootSlot
+                Boot Mode: $bootMode
+                Boot Reason: $bootReason
+                OTA Version: $otaVersion
+                Build Date: $buildDate
+                Build Date UTC: $buildDateUtc
+                Incremental Build: $updateEngine
+
+                ==========================================
+                10. LOG AND CRASH DIAGNOSTICS
+                ==========================================
+
+                Application PID: ${android.os.Process.myPid()}
+                Application Package: $packageName
+
+                System-wide logcat and protected crash
+                reports require authorized ADB access.
+                This application-only report does not claim
+                to have read protected system logs.
+
+                ==========================================
+                11. TECHNICIAN ASSESSMENT
+                ==========================================
+
+                ${assessment.joinToString("\n") { "- $it" }}
+
+                ==========================================
+                12. IMPORTANT DIAGNOSTIC LIMITATIONS
+                ==========================================
+
+                CPU frequency, temperature sensors, USB
+                devices, camera capabilities and process
+                details depend on manufacturer exposure
+                and Android permissions.
+
+                Hardware presence does not prove that
+                hardware is functioning correctly.
+
+                Actual microphone, speaker, camera,
+                touchscreen and USB tests require
+                controlled functional testing.
+
+                No repairs, resets, application disabling,
+                firmware flashing or data deletion are
+                performed by this diagnostic suite.
+
+                """.trimIndent()
+            }
+
+
 
             else -> {
                 "Unknown command: $command\nType 'help' to see available commands."
