@@ -293,6 +293,16 @@ class _RepairToolsScreenState extends State<RepairToolsScreen> {
           _diagnosticResults[command] =
               'Diagnostic error: ${error.message ?? error.code}';
         });
+
+     await _saveRepairHistory(
+          operation:
+              '${guide.title} - ${_commandLabels[command] ?? command}',
+          category: 'Self-device diagnostic',
+          result: 'Failed',
+          details:
+              _diagnosticResults[command] ?? 'Diagnostic failed.',
+        );
+        
       } catch (error) {
         if (!mounted) return;
 
