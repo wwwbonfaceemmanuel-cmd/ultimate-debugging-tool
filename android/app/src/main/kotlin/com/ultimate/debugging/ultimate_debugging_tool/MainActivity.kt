@@ -589,16 +589,19 @@ override fun configureFlutterEngine(
                     }
                 }
 
-                fun readPartition(path: String): String {
+              fun readPartition(path: String): String {
                     return try {
                         val file = java.io.File(path)
-                        if (file.exists()) {
+
+                        if (file.exists() && file.isDirectory) {
                             val stat = android.os.StatFs(path)
+
                             val total = stat.totalBytes /
                                 (1024.0 * 1024.0 * 1024.0)
+
                             "%.2f GB".format(total)
                         } else {
-                            "Not exposed"
+                            "Not exposed or unavailable"
                         }
                     } catch (e: Exception) {
                         "Unavailable"
