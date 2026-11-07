@@ -534,29 +534,287 @@ override fun configureFlutterEngine(
             }
 
             
+           
             "device-info" -> {
+
+                val activityManager =
+                    getSystemService(Context.ACTIVITY_SERVICE)
+                        as ActivityManager
+
+                val memoryInfo = ActivityManager.MemoryInfo()
+                activityManager.getMemoryInfo(memoryInfo)
+
+                val sensorManager =
+                    getSystemService(Context.SENSOR_SERVICE)
+                        as SensorManager
+
+                val sensors = sensorManager
+                    .getSensorList(Sensor.TYPE_ALL)
+                    .sortedBy { it.name }
+                    .joinToString("\n") {
+                        "${it.name} | ${it.vendor} | Type: ${it.type}"
+                    }
+                    .ifBlank { "Unavailable" }
+
+                val features = packageManager
+                    .systemAvailableFeatures
+                    .mapNotNull { it.name }
+                    .sorted()
+                    .joinToString("\n")
+                    .ifBlank { "Unavailable" }
+
+                fun readProperty(name: String): String {
+                    return try {
+                        val process = Runtime.getRuntime().exec(
+                            arrayOf("getprop", name)
+                        )
+                        val value = process.inputStream
+                            .bufferedReader()
+                            .use { it.readText().trim() }
+
+                        process.waitFor()
+                        value.ifBlank { "Unavailable" }
+                    } catch (e: Exception) {
+                        "Unavailable"
+                    }
+                }
+
+                fun readPartition(path: String): String {
+                    return try {
+                        val file = java.io.File(path)
+                        if (file.exists()) {
+                            val stat = android.os.StatFs(path)
+                            val total = stat.totalBytes /
+                                (1024.0 * 1024.0 * 1024.0)
+                            "%.2f GB".format(total)
+                        } else {
+                            "Not exposed"
+                        }
+                    } catch (e: Exception) {
+                        "Unavailable"
+                    }
+                }
+
+                val totalRAM =
+                    memoryInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
+
+                val availableRAM =
+                    memoryInfo.availMem / (1024.0 * 1024.0 * 1024.0)
+
+                val usedRAM = totalRAM - availableRAM
+
+                val uptimeSeconds =
+                    android.os.SystemClock.elapsedRealtime() / 1000
+
+                val selinuxStatus = try {
+                    val file = java.io.File("/sys/fs/selinux/enforce")
+                    if (file.canRead()) {
+                        when (file.readText().trim()) {
+                            "1" -> "Enforcing"
+                            "0" -> "Permissive"
+                            else -> "Unknown"
+                        }
+                    } else {
+                        "Unavailable to application"
+                    }
+                } catch (e: Exception) {
+                    "Unavailable to application"
+                }
+
+                val abUpdate = readProperty("ro.build.ab_update")
+                val virtualAb = readProperty("ro.virtual_ab.enabled")
+                val dynamicPartitions =
+                    readProperty("ro.boot.dynamic_partitions")
+
+                val verifiedBootState =
+                    readProperty("ro.boot.verifiedbootstate")
+
+                val flashLocked =
+                    readProperty("ro.boot.flash.locked")
+
+                val vbmetaState =
+                    readProperty("ro.boot.vbmeta.device_state")
+
+                val partitionNames = listOf(
+                    "system",
+                    "vendor",
+                    "product",
+                    "odm",
+                    "system_ext"
+                )
+
+                val partitionReport = partitionNames.joinToString("\n") {
+                    val path = "/$it"
+                    "$it: ${readPartition(path)}"
+                }
+
+                val assessment = mutableListOf<String>()
+
+                if (memoryInfo.lowMemory) {
+                    assessment.add("Android reports low memory conditions.")
+                }
+
+                if (selinuxStatus == "Permissive") {
+                    assessment.add(
+                        "WARNING: SELinux is permissive. Investigate device security."
+                    )
+                }
+
+                if (verifiedBootState == "orange") {
+                    assessment.add(
+                        "Verified Boot reports an unlocked or modified boot state."
+                    )
+                }
+
+                if (assessment.isEmpty()) {
+                    assessment.add(
+                        "No immediate abnormal condition detected from available readings."
+                    )
+                }
+
                 """
-                DEVICE INFORMATION
+                ADVANCED DEVICE, SOFTWARE AND FIRMWARE REPORT
+
+                ==========================================
+                1. DEVICE IDENTITY
+                ==========================================
 
                 Manufacturer: ${Build.MANUFACTURER}
                 Brand: ${Build.BRAND}
                 Model: ${Build.MODEL}
-                Device: ${Build.DEVICE}
+                Device Codename: ${Build.DEVICE}
                 Product: ${Build.PRODUCT}
                 Board: ${Build.BOARD}
                 Hardware: ${Build.HARDWARE}
+                Bootloader: ${Build.BOOTLOADER}
+                Radio/Baseband: ${Build.getRadioVersion() ?: "Unavailable"}
+
+                ==========================================
+                2. ANDROID SOFTWARE
+                ==========================================
 
                 Android Version: ${Build.VERSION.RELEASE}
                 SDK Version: ${Build.VERSION.SDK_INT}
                 Security Patch: ${Build.VERSION.SECURITY_PATCH}
+                Base OS: ${Build.VERSION.BASE_OS}
                 Build ID: ${Build.ID}
                 Build Display: ${Build.DISPLAY}
                 Build Incremental: ${Build.VERSION.INCREMENTAL}
+                Build Type: ${Build.TYPE}
+                Build Tags: ${Build.TAGS}
                 Build Fingerprint: ${Build.FINGERPRINT}
-                Kernel Version: ${System.getProperty("os.version") ?: "Unknown"}
-                """.trimIndent()
-            }
 
+                ==========================================
+                3. FIRMWARE IDENTIFIERS
+                ==========================================
+
+                ROM Version: ${readProperty("ro.build.display.id")}
+                Firmware Fingerprint: ${readProperty("ro.build.fingerprint")}
+                Manufacturer Build: ${readProperty("ro.build.version.incremental")}
+                Platform: ${readProperty("ro.board.platform")}
+                Chipset Hardware: ${readProperty("ro.hardware")}
+                Bootloader Version: ${readProperty("ro.bootloader")}
+                Baseband Version: ${readProperty("gsm.version.baseband")}
+                Vendor Build: ${readProperty("ro.vendor.build.fingerprint")}
+                Product Build: ${readProperty("ro.product.build.fingerprint")}
+
+                ==========================================
+                4. PROCESSOR AND ARCHITECTURE
+                ==========================================
+
+                Available CPU Cores: ${
+                    Runtime.getRuntime().availableProcessors()
+                }
+                Supported ABIs: ${Build.SUPPORTED_ABIS.joinToString(", ")}
+                Kernel Architecture: ${System.getProperty("os.arch")}
+                Kernel Version: ${System.getProperty("os.version")}
+
+                ==========================================
+                5. MEMORY
+                ==========================================
+
+                Total RAM: %.2f GB
+                Used RAM: %.2f GB
+                Available RAM: %.2f GB
+                Low Memory: ${memoryInfo.lowMemory}
+                Memory Threshold: ${
+                    memoryInfo.threshold / (1024.0 * 1024.0)
+                } MB
+
+                ==========================================
+                6. DISPLAY AND HARDWARE SENSORS
+                ==========================================
+
+                Display Width: ${resources.displayMetrics.widthPixels} pixels
+                Display Height: ${resources.displayMetrics.heightPixels} pixels
+                Display Density: ${resources.displayMetrics.densityDpi} DPI
+
+                Sensors:
+                $sensors
+
+                ==========================================
+                7. HARDWARE FEATURES
+                ==========================================
+
+                $features
+
+                ==========================================
+                8. BOOT AND PARTITION CONFIGURATION
+                ==========================================
+
+                A/B Updates: $abUpdate
+                Virtual A/B: $virtualAb
+                Dynamic Partitions: $dynamicPartitions
+                Verified Boot State: $verifiedBootState
+                Bootloader Flash Lock: $flashLocked
+                VBMeta Device State: $vbmetaState
+
+                Partition Information:
+                $partitionReport
+
+                ==========================================
+                9. SECURITY INFORMATION
+                ==========================================
+
+                SELinux: $selinuxStatus
+                Build Type: ${Build.TYPE}
+                Build Tags: ${Build.TAGS}
+                Verified Boot: $verifiedBootState
+                Security Patch: ${Build.VERSION.SECURITY_PATCH}
+
+                ==========================================
+                10. SYSTEM OPERATION
+                ==========================================
+
+                Uptime: ${uptimeSeconds / 86400} days
+                Uptime Seconds: $uptimeSeconds
+
+                ==========================================
+                11. TECHNICIAN ASSESSMENT
+                ==========================================
+
+                ${assessment.joinToString("\n") { "- $it" }}
+
+                ==========================================
+                12. FIRMWARE MATCHING WARNING
+                ==========================================
+
+                Always match firmware using the exact model,
+                device codename, hardware variant, region,
+                build fingerprint and bootloader requirements.
+
+                Never flash firmware based on model name alone.
+
+                Some properties and partitions are protected
+                and may require authorized ADB or manufacturer
+                service tools. Unavailable does not mean absent.
+
+                """.trimIndent().format(
+                    totalRAM,
+                    usedRAM,
+                    availableRAM
+                )
+            }
 
             
             "battery" -> {
