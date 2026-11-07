@@ -2015,17 +2015,20 @@ override fun configureFlutterEngine(
                 val installedApps =
                     packageManager.getInstalledApplications(0)
 
-                val enabledApps =
-                    installedApps.count {
-                        packageManager.getApplicationEnabledSetting(
-                            it.packageName
-                        ) !=
-                            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED &&
-                        packageManager.getApplicationEnabledSetting(
-                            it.packageName
-                        ) !=
-                            android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER &&
-                        it.enabled
+                                val enabledApps =
+                    installedApps.count { app ->
+                        try {
+                            val state =
+                                packageManager.getApplicationEnabledSetting(
+                                    app.packageName
+                                )
+
+                            app.enabled &&
+                                state != android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED &&
+                                state != android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                        } catch (e: Exception) {
+                            app.enabled
+                        }
                     }
 
                 val systemApps =
