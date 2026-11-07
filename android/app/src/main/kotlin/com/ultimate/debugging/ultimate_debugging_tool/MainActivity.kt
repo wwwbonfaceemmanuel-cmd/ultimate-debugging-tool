@@ -530,6 +530,7 @@ override fun configureFlutterEngine(
                 """.trimIndent()
             }
 
+            
             "device-info" -> {
                 """
                 DEVICE INFORMATION
@@ -538,11 +539,21 @@ override fun configureFlutterEngine(
                 Brand: ${Build.BRAND}
                 Model: ${Build.MODEL}
                 Device: ${Build.DEVICE}
+                Product: ${Build.PRODUCT}
+                Board: ${Build.BOARD}
+                Hardware: ${Build.HARDWARE}
+
                 Android Version: ${Build.VERSION.RELEASE}
                 SDK Version: ${Build.VERSION.SDK_INT}
-                Hardware: ${Build.HARDWARE}
+                Security Patch: ${Build.VERSION.SECURITY_PATCH}
+                Build ID: ${Build.ID}
+                Build Display: ${Build.DISPLAY}
+                Build Incremental: ${Build.VERSION.INCREMENTAL}
+                Build Fingerprint: ${Build.FINGERPRINT}
+                Kernel Version: ${System.getProperty("os.version") ?: "Unknown"}
                 """.trimIndent()
             }
+
 
             "battery" -> {
 
