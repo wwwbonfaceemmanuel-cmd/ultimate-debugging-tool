@@ -1,6 +1,6 @@
 
 import 'app_details_screen.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../services/application_inventory_service.dart';
 
@@ -437,7 +437,7 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
         },
         contentPadding: const EdgeInsets.all(12),
         leading: CircleAvatar(
-          backgroundColor: appColor.withOpacity(0.15),
+          backgroundColor: appColor.withValues(alpha: 0.15),
           child: Icon(
             app.isSystemApp ? Icons.settings : Icons.android,
             color: appColor,
@@ -532,7 +532,7 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
         vertical: 4,
       ),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(5),
       ),
       child: Text(

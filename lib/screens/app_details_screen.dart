@@ -1,5 +1,5 @@
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 import '../services/application_inventory_service.dart';
@@ -435,7 +435,7 @@ class AppDetailsScreen extends StatelessWidget {
                     CircleAvatar(
                       radius: 35,
                       backgroundColor:
-                          Colors.lightBlueAccent.withOpacity(0.15),
+                          Colors.lightBlueAccent.withValues(alpha: 0.15),
                       child: Icon(
                         app.isSystemApp
                             ? Icons.settings
