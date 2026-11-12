@@ -55,6 +55,7 @@ class MainActivity : FlutterActivity() {
             "com.ultimate.debugging.USB_PERMISSION"
 
         private const val REQUEST_PICK_FILE = 4201
+        private const val REQUEST_PICK_IMAGE = 4202
         private const val WIRELESS_PORT = 5555
         private const val MAX_TRANSFER_AGE_MS = 24L * 60 * 60 * 1000
     }
@@ -112,6 +113,9 @@ class MainActivity : FlutterActivity() {
 
     // Main thread only.
     private var pendingPush: Pair<Reply, String>? = null
+
+    // Main thread only.
+    private var pendingImage: Reply? = null
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -289,6 +293,18 @@ class MainActivity : FlutterActivity() {
                 fastboot?.close()
                 fastboot = null
                 true
+            }
+
+            "pickBootImage" -> pickBootImage(reply)
+
+            "flashFastbootImage" -> {
+                val partition = requireText(call, "partition", "A partition is required.")
+                val path = requireText(call, "path", "Choose an image first.")
+                val sha256 = requireText(call, "sha256", "The image checksum is required.")
+
+                async(reply, "FASTBOOT_FLASH_ERROR") {
+                    flashFastbootImage(partition, path, sha256)
+                }
             }
 
             "getFastbootInfo" -> async(reply, "FASTBOOT_ERROR") {
@@ -576,6 +592,128 @@ class MainActivity : FlutterActivity() {
         }
 
         return found
+    }
+
+    private fun pickBootImage(reply: Reply) {
+        pendingImage?.error("FILE_PICK_REPLACED", "Another image was requested.")
+        pendingImage = reply
+
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(
+                Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                },
+                REQUEST_PICK_IMAGE
+            )
+        } catch (e: Exception) {
+            pendingImage = null
+            throw RequestError(
+                "FILE_PICK_ERROR",
+                "No file chooser is available on this phone."
+            )
+        }
+    }
+
+    /** Copies the chosen image into the app, hashes it, and reports it. */
+    private fun handlePickedImage(resultCode: Int, data: Intent?) {
+        val reply = pendingImage ?: return
+        pendingImage = null
+
+        val uri: Uri? = data?.data
+
+        if (resultCode != RESULT_OK || uri == null) {
+            reply.success(mapOf("cancelled" to true))
+            return
+        }
+
+        async(reply, "BOOT_IMAGE_ERROR") {
+            val directory = File(filesDir, "boot_images").apply { mkdirs() }
+            removeOldFiles(directory)
+
+            val name = displayName(uri)
+            val safeName = name.replace('/', '_').replace('\\', '_')
+            val target = File(directory, "${System.currentTimeMillis()}-$safeName")
+
+            val input = contentResolver.openInputStream(uri)
+                ?: throw IOException("The chosen image could not be opened.")
+
+            input.use { source ->
+                target.outputStream().use { sink -> source.copyTo(sink) }
+            }
+
+            mapOf(
+                "cancelled" to false,
+                "path" to target.absolutePath,
+                "fileName" to name,
+                "sizeBytes" to target.length(),
+                "sha256" to sha256Of(target)
+            )
+        }
+    }
+
+    private fun sha256Of(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+
+        file.inputStream().use { stream ->
+            val buffer = ByteArray(64 * 1024)
+
+            while (true) {
+                val read = stream.read(buffer)
+                if (read <= 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+
+        return digest.digest().joinToString("") {
+            String.format(java.util.Locale.US, "%02x", it)
+        }
+    }
+
+    /**
+     * Writes one image to one partition, but only after checking that
+     * the file still has the checksum the technician confirmed.
+     */
+    private fun flashFastbootImage(
+        partition: String,
+        path: String,
+        sha256: String
+    ): Map<String, Any?> {
+        val session = requireFastboot()
+
+        val directory = File(filesDir, "boot_images").canonicalFile
+        val image = File(path).canonicalFile
+
+        if (!image.path.startsWith(directory.path + File.separator)) {
+            throw RequestError(
+                "INVALID_IMAGE",
+                "Choose the image with this tool first."
+            )
+        }
+
+        if (!image.isFile) {
+            throw RequestError("INVALID_IMAGE", "The image file is gone. Choose it again.")
+        }
+
+        val bytes = image.readBytes()
+        val actual = sha256Of(image)
+
+        if (!actual.equals(sha256, ignoreCase = true)) {
+            throw RequestError(
+                "IMAGE_CHANGED",
+                "The image changed since it was checked. Choose it again."
+            )
+        }
+
+        val message = session.flash(partition, bytes)
+
+        return linkedMapOf(
+            "partition" to partition,
+            "sizeBytes" to bytes.size,
+            "sha256" to actual,
+            "message" to message
+        )
     }
 
     private fun requireFastboot(): FastbootSession {
@@ -1010,6 +1148,11 @@ class MainActivity : FlutterActivity() {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
 
+        if (requestCode == REQUEST_PICK_IMAGE) {
+            handlePickedImage(resultCode, data)
+            return
+        }
+
         if (requestCode != REQUEST_PICK_FILE) return
 
         val (reply, directory) = pendingPush ?: return
@@ -1132,6 +1275,7 @@ class MainActivity : FlutterActivity() {
         worker.shutdownNow()
         eventSink = null
         pendingPush = null
+        pendingImage = null
 
         super.onDestroy()
     }

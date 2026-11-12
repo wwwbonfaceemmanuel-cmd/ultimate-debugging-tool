@@ -459,6 +459,122 @@ class SecurityAuditResult {
   });
 }
 
+/// A USB device that is sitting in its bootloader (fastboot mode).
+class FastbootDevice {
+  final String deviceName;
+  final int vendorId;
+  final int productId;
+  final String productName;
+  final String manufacturerName;
+  final bool hasPermission;
+
+  const FastbootDevice({
+    required this.deviceName,
+    this.vendorId = 0,
+    this.productId = 0,
+    this.productName = '',
+    this.manufacturerName = '',
+    this.hasPermission = false,
+  });
+
+  String get title {
+    final name = productName.isNotEmpty
+        ? productName
+        : manufacturerName.isNotEmpty
+            ? manufacturerName
+            : 'USB device';
+    return '$name (${vendorId.toRadixString(16)}:${productId.toRadixString(16)})';
+  }
+
+  factory FastbootDevice.fromMap(Map<String, dynamic> map) {
+    return FastbootDevice(
+      deviceName: asText(map['deviceName']),
+      vendorId: asInt(map['vendorId']),
+      productId: asInt(map['productId']),
+      productName: asText(map['productName']),
+      manufacturerName: asText(map['manufacturerName']),
+      hasPermission: asBool(map['hasPermission']),
+    );
+  }
+}
+
+/// One partition as the bootloader reports it.
+class FastbootPartition {
+  final String name;
+  final int sizeBytes;
+  final String sizeText;
+
+  const FastbootPartition({
+    required this.name,
+    this.sizeBytes = 0,
+    this.sizeText = '',
+  });
+
+  factory FastbootPartition.fromMap(Map<String, dynamic> map) {
+    return FastbootPartition(
+      name: asText(map['name']),
+      sizeBytes: asInt(map['sizeBytes']),
+      sizeText: asText(map['sizeText']),
+    );
+  }
+}
+
+/// What a phone in bootloader mode says about itself.
+class FastbootInfo {
+  final String product;
+  final String serial;
+  final bool? unlocked;
+  final String unlockText;
+  final int slots;
+  final String currentSlot;
+  final List<FastbootPartition> partitions;
+  final Map<String, String> variables;
+
+  const FastbootInfo({
+    this.product = '',
+    this.serial = '',
+    this.unlocked,
+    this.unlockText = 'Not reported',
+    this.slots = 0,
+    this.currentSlot = '',
+    this.partitions = const <FastbootPartition>[],
+    this.variables = const <String, String>{},
+  });
+
+  /// The size of a partition, or 0 when the bootloader did not say.
+  int sizeOf(String name) {
+    for (final partition in partitions) {
+      if (partition.name == name) return partition.sizeBytes;
+    }
+    return 0;
+  }
+
+  factory FastbootInfo.fromMap(Map<String, dynamic> map) {
+    final partitions = <FastbootPartition>[];
+    for (final item in asMapList(map['partitions'])) {
+      partitions.add(FastbootPartition.fromMap(item));
+    }
+
+    final variables = <String, String>{};
+    asMap(map['variables']).forEach((key, value) {
+      variables[key] = asText(value);
+    });
+
+    final rawUnlocked = map['unlocked'];
+
+    return FastbootInfo(
+      product: asText(map['product'], 'Unknown'),
+      serial: asText(map['serial']),
+      unlocked: rawUnlocked is bool ? rawUnlocked : null,
+      unlockText: asText(map['unlockText'], 'Not reported'),
+      slots: asInt(map['slots']),
+      currentSlot: asText(map['currentSlot']),
+      partitions: partitions,
+      variables: variables,
+    );
+  }
+}
+
 /// One reading from the hardware check-up.
 class HardwareItem {
   final String name;
@@ -847,6 +963,67 @@ class DeviceBridge {
       },
     );
     return asText(result, 'The report returned no text.');
+  }
+
+  // ----- Bootloader (fastboot) -----
+
+  /// USB devices that are in bootloader mode.
+  Future<List<FastbootDevice>> getFastbootDevices() async {
+    final result = await _channel.invokeMethod<dynamic>('getFastbootDevices');
+    final devices = <FastbootDevice>[];
+    for (final item in asMapList(result)) {
+      devices.add(FastbootDevice.fromMap(item));
+    }
+    return devices;
+  }
+
+  /// Opens the bootloader link and reads the phone.
+  Future<FastbootInfo> connectFastboot(String deviceName) async {
+    final result = await _channel.invokeMethod<dynamic>(
+      'connectFastboot',
+      <String, dynamic>{'deviceName': deviceName},
+    );
+    return FastbootInfo.fromMap(asMap(result));
+  }
+
+  Future<void> disconnectFastboot() async {
+    await _channel.invokeMethod<dynamic>('disconnectFastboot');
+  }
+
+  Future<FastbootInfo> getFastbootInfo() async {
+    final result = await _channel.invokeMethod<dynamic>('getFastbootInfo');
+    return FastbootInfo.fromMap(asMap(result));
+  }
+
+  /// Restarts the phone: '', 'bootloader', 'recovery' or 'fastboot'.
+  Future<void> rebootFastboot(String target) async {
+    await _channel.invokeMethod<dynamic>(
+      'rebootFastboot',
+      <String, dynamic>{'target': target},
+    );
+  }
+
+  /// Asks for an image file and copies it into the app, with its hash.
+  Future<Map<String, dynamic>> pickBootImage() async {
+    final result = await _channel.invokeMethod<dynamic>('pickBootImage');
+    return asMap(result);
+  }
+
+  /// Writes a checked image to one partition.
+  Future<Map<String, dynamic>> flashFastbootImage({
+    required String partition,
+    required String path,
+    required String sha256,
+  }) async {
+    final result = await _channel.invokeMethod<dynamic>(
+      'flashFastbootImage',
+      <String, dynamic>{
+        'partition': partition,
+        'path': path,
+        'sha256': sha256,
+      },
+    );
+    return asMap(result);
   }
 
   /// Explains one app on the connected phone.

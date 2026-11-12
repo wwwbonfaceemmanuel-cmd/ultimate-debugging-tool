@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'app/app_theme.dart';
 import 'screens/apk_manager_screen.dart';
 import 'screens/app_workbench_screen.dart';
+import 'screens/bootloader_screen.dart';
 import 'screens/command_terminal_screen.dart';
 import 'screens/connection_screen.dart';
 import 'screens/diagnostics_screen.dart';
@@ -103,6 +104,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       icon: Icons.memory,
       color: Colors.cyanAccent,
       builder: (context) => const HardwareCheckScreen(),
+    ),
+    ToolItem(
+      title: 'Bootloader',
+      description: 'Read a phone in fastboot mode; write one partition.',
+      icon: Icons.memory,
+      color: Colors.pinkAccent,
+      builder: (context) => const BootloaderScreen(),
     ),
     ToolItem(
       title: 'Reset & Wipe',

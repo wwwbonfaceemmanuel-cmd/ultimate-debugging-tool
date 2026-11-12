@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:ultimate_debugging_tool/app/app_theme.dart';
 import 'package:ultimate_debugging_tool/main.dart';
 import 'package:ultimate_debugging_tool/screens/app_workbench_screen.dart';
+import 'package:ultimate_debugging_tool/screens/bootloader_screen.dart';
 import 'package:ultimate_debugging_tool/screens/command_terminal_screen.dart';
 import 'package:ultimate_debugging_tool/screens/connection_screen.dart';
 import 'package:ultimate_debugging_tool/screens/diagnostics_screen.dart';
@@ -46,6 +47,31 @@ const Map<String, Object?> connectedStatus = <String, Object?>{
   },
 };
 
+const String fastbootName = '/dev/bus/usb/002/003';
+
+const Map<String, Object?> fastbootInfo = <String, Object?>{
+  'product': 'a12',
+  'serial': 'R58N1',
+  'unlocked': false,
+  'unlockText': 'Locked',
+  'slots': 2,
+  'currentSlot': 'a',
+  'partitions': <Object?>[
+    <String, Object?>{
+      'name': 'boot',
+      'sizeBytes': 67108864,
+      'sizeText': '64.00 MB',
+    },
+    <String, Object?>{
+      'name': 'recovery',
+      'sizeBytes': 67108864,
+      'sizeText': '64.00 MB',
+    },
+  ],
+  'variables': <String, Object?>{'version': '0.4'},
+};
+
+bool fastbootVisible = true;
 bool nativeConnected = false;
 final List<MethodCall> calls = <MethodCall>[];
 
@@ -295,6 +321,42 @@ Future<Object?> fakeNative(MethodCall call) async {
           'enabled': true,
         },
       ];
+    case 'getFastbootDevices':
+      if (!fastbootVisible) return <Object?>[];
+      return <Object?>[
+        <String, Object?>{
+          'deviceName': fastbootName,
+          'vendorId': 0x04e8,
+          'productId': 0x6860,
+          'manufacturerName': 'samsung',
+          'productName': 'SM-A125F',
+          'interfaceId': 0,
+          'hasPermission': true,
+        },
+      ];
+    case 'connectFastboot':
+      return fastbootInfo;
+    case 'getFastbootInfo':
+      return fastbootInfo;
+    case 'pickBootImage':
+      return <String, Object?>{
+        'cancelled': false,
+        'path': '/data/user/0/app/files/boot_images/1-boot.img',
+        'fileName': 'boot.img',
+        'sizeBytes': 33554432,
+        'sha256': 'abc123def456',
+      };
+    case 'flashFastbootImage':
+      return <String, Object?>{
+        'partition': args['partition'],
+        'sizeBytes': 33554432,
+        'sha256': args['sha256'],
+        'message': 'The boot partition was written.',
+      };
+    case 'rebootFastboot':
+      return true;
+    case 'disconnectFastboot':
+      return true;
     case 'getAppDiagnosis':
       return <String, Object?>{
         'packageName': args['packageName'],
@@ -419,6 +481,7 @@ void main() {
   setUp(() {
     calls.clear();
     nativeConnected = false;
+    fastbootVisible = true;
     DeviceBridge.instance.status.value = AdbStatus.disconnected;
 
     final messenger =
@@ -801,6 +864,74 @@ void main() {
 
     expect(find.text('Connect a phone first'), findsOneWidget);
     expect(called('getTargetApplications'), isFalse);
+
+    await finish(tester);
+  });
+
+  testWidgets('the bootloader reads a phone in fastboot mode',
+      (tester) async {
+    await showTall(tester, const BootloaderScreen());
+
+    expect(called('getFastbootDevices'), isTrue);
+    expect(find.textContaining('SM-A125F'), findsWidgets);
+
+    await tester.tap(find.text('Connect'));
+    await settle(tester);
+
+    expect(argsOf('connectFastboot')['deviceName'], fastbootName);
+    expect(find.text('a12'), findsOneWidget);
+    expect(find.text('LOCKED'), findsOneWidget);
+    expect(find.text('Serial R58N1 - slot a of 2'), findsOneWidget);
+    expect(find.text('64.00 MB'), findsWidgets);
+
+    await finish(tester);
+  });
+
+  testWidgets('flashing needs the partition typed out first',
+      (tester) async {
+    await showTall(tester, const BootloaderScreen());
+
+    await tester.tap(find.text('Connect'));
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('boot-pick-image')));
+    await settle(tester);
+
+    expect(called('pickBootImage'), isTrue);
+    expect(find.text('boot.img'), findsOneWidget);
+    expect(find.textContaining('SHA-256 abc123def456'), findsOneWidget);
+
+    // Nothing happens until the partition name is typed.
+    final flash = find.byKey(const Key('boot-flash'));
+    expect(tester.widget<FilledButton>(flash).onPressed, isNull);
+
+    await tester.enterText(find.byType(TextField).last, 'boot');
+    await settle(tester);
+    expect(tester.widget<FilledButton>(flash).onPressed, isNotNull);
+
+    await tester.tap(flash);
+    await settle(tester);
+    expect(find.text('Write to the boot partition?'), findsOneWidget);
+
+    await tester.tap(find.text('Write it'));
+    await settle(tester);
+
+    final args = argsOf('flashFastbootImage');
+    expect(args['partition'], 'boot');
+    expect(args['sha256'], 'abc123def456');
+    expect(args['path'], endsWith('1-boot.img'));
+    expect(argsOf('saveRepairHistory')['category'], 'Bootloader');
+    expect(find.text('The boot partition was written.'), findsWidgets);
+
+    await finish(tester);
+  });
+
+  testWidgets('the bootloader explains when no phone is in fastboot',
+      (tester) async {
+    fastbootVisible = false;
+    await showTall(tester, const BootloaderScreen());
+
+    expect(find.text('No phone is in bootloader mode'), findsOneWidget);
+    expect(called('connectFastboot'), isFalse);
 
     await finish(tester);
   });
