@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'app/app_theme.dart';
 import 'screens/apk_manager_screen.dart';
+import 'screens/app_workbench_screen.dart';
 import 'screens/command_terminal_screen.dart';
 import 'screens/connection_screen.dart';
 import 'screens/diagnostics_screen.dart';
@@ -88,6 +89,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
       icon: Icons.folder_copy,
       color: Colors.amber,
       builder: (context) => const FileManagerScreen(),
+    ),
+    ToolItem(
+      title: 'App Workbench',
+      description: 'Why one app misbehaves, and the repairs for it.',
+      icon: Icons.bug_report,
+      color: Colors.lightGreen,
+      builder: (context) => const AppWorkbenchScreen(),
     ),
     ToolItem(
       title: 'Hardware Check',

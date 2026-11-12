@@ -565,6 +565,69 @@ class HardwareCheckup {
   }
 }
 
+/// Why one app on the connected phone is misbehaving.
+class AppDiagnosisReport {
+  final String packageName;
+  final String versionName;
+  final String versionCode;
+  final String targetSdk;
+  final String lastUpdated;
+  final bool system;
+  final bool enabled;
+  final bool running;
+  final String standbyBucket;
+  final String background;
+  final int alarmCount;
+  final List<String> services;
+  final List<String> crashes;
+  final List<String> anrs;
+  final String verdict;
+  final String report;
+
+  const AppDiagnosisReport({
+    this.packageName = '',
+    this.versionName = '',
+    this.versionCode = '',
+    this.targetSdk = '',
+    this.lastUpdated = '',
+    this.system = false,
+    this.enabled = true,
+    this.running = false,
+    this.standbyBucket = '',
+    this.background = '',
+    this.alarmCount = 0,
+    this.services = const <String>[],
+    this.crashes = const <String>[],
+    this.anrs = const <String>[],
+    this.verdict = '',
+    this.report = '',
+  });
+
+  /// True when the phone recorded a crash or a stall for this app.
+  bool get hasProblems => crashes.isNotEmpty || anrs.isNotEmpty;
+
+  factory AppDiagnosisReport.fromMap(Map<String, dynamic> map) {
+    return AppDiagnosisReport(
+      packageName: asText(map['packageName']),
+      versionName: asText(map['versionName']),
+      versionCode: asText(map['versionCode']),
+      targetSdk: asText(map['targetSdk']),
+      lastUpdated: asText(map['lastUpdated']),
+      system: asBool(map['system']),
+      enabled: map['enabled'] != false,
+      running: asBool(map['running']),
+      standbyBucket: asText(map['standbyBucket']),
+      background: asText(map['background']),
+      alarmCount: asInt(map['alarmCount']),
+      services: asStringList(map['services']),
+      crashes: asStringList(map['crashes']),
+      anrs: asStringList(map['anrs']),
+      verdict: asText(map['verdict']),
+      report: asText(map['report']),
+    );
+  }
+}
+
 class HistoryRecord {
   final String id;
   final int timestamp;
@@ -784,6 +847,15 @@ class DeviceBridge {
       },
     );
     return asText(result, 'The report returned no text.');
+  }
+
+  /// Explains one app on the connected phone.
+  Future<AppDiagnosisReport> getAppDiagnosis(String packageName) async {
+    final result = await _channel.invokeMethod<dynamic>(
+      'getAppDiagnosis',
+      <String, dynamic>{'packageName': packageName},
+    );
+    return AppDiagnosisReport.fromMap(asMap(result));
   }
 
   /// Reads every hardware section of the connected phone.

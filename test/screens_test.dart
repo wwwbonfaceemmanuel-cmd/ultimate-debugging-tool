@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:ultimate_debugging_tool/app/app_theme.dart';
 import 'package:ultimate_debugging_tool/main.dart';
+import 'package:ultimate_debugging_tool/screens/app_workbench_screen.dart';
 import 'package:ultimate_debugging_tool/screens/command_terminal_screen.dart';
 import 'package:ultimate_debugging_tool/screens/connection_screen.dart';
 import 'package:ultimate_debugging_tool/screens/diagnostics_screen.dart';
@@ -294,6 +295,27 @@ Future<Object?> fakeNative(MethodCall call) async {
           'enabled': true,
         },
       ];
+    case 'getAppDiagnosis':
+      return <String, Object?>{
+        'packageName': args['packageName'],
+        'versionName': '2.24.1',
+        'versionCode': '2241',
+        'targetSdk': '34',
+        'system': false,
+        'enabled': true,
+        'running': true,
+        'standbyBucket': 'Working set',
+        'background': 'Blocked from running in the background',
+        'alarmCount': 3,
+        'services': <Object?>['com.example.app/.Sync'],
+        'crashes': <Object?>[
+          'E AndroidRuntime: FATAL EXCEPTION: main',
+          'E AndroidRuntime: Process: com.example.app, PID: 4321',
+        ],
+        'anrs': <Object?>[],
+        'verdict': 'The app has crashed recently.',
+        'report': 'APP DIAGNOSIS - com.example.app\nVersion: 2.24.1',
+      };
     case 'getTargetApplicationDetails':
       return <String, Object?>{
         'packageName': args['packageName'],
@@ -740,6 +762,45 @@ void main() {
     expect(args['operation'], 'Factory reset');
     expect(args['scope'], 'target');
     expect(find.text('Reset recorded'), findsOneWidget);
+
+    await finish(tester);
+  });
+
+  testWidgets('the app workbench explains an app and clears its cache',
+      (tester) async {
+    connectPhone();
+    await showTall(tester, const AppWorkbenchScreen());
+
+    expect(called('getTargetApplications'), isTrue);
+    expect(find.text('com.example.app'), findsOneWidget);
+
+    await tester.tap(find.text('com.example.app'));
+    await settle(tester);
+
+    expect(argsOf('getAppDiagnosis')['packageName'], 'com.example.app');
+    expect(find.text('The app has crashed recently.'), findsOneWidget);
+    expect(find.textContaining('APP DIAGNOSIS'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('app-action-clear-app-cache')));
+    await settle(tester);
+    expect(find.text('Clear only the cache?'), findsOneWidget);
+
+    await tester.tap(find.text('Do it'));
+    await settle(tester);
+
+    final args = argsOf('executeRepairCommand');
+    expect(args['operation'], 'clear-app-cache');
+    expect(args['packageName'], 'com.example.app');
+    expect(args['confirmed'], true);
+
+    await finish(tester);
+  });
+
+  testWidgets('the app workbench needs a phone first', (tester) async {
+    await show(tester, const AppWorkbenchScreen());
+
+    expect(find.text('Connect a phone first'), findsOneWidget);
+    expect(called('getTargetApplications'), isFalse);
 
     await finish(tester);
   });
