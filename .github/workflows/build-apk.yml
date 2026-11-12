@@ -1,144 +1,131 @@
-
 name: Build Ultimate Debugging Tool APK
 
 on:
   workflow_dispatch:
   push:
+  pull_request:
 
 permissions:
   contents: read
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    name: Build Android APK
+    name: Check, test and build
     runs-on: ubuntu-latest
+    timeout-minutes: 40
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
+      - name: Read pinned Flutter version
+        id: flutter
+        run: echo "version=$(cat .flutter-version)" >> "$GITHUB_OUTPUT"
+
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: ${{ steps.flutter.outputs.version }}
           channel: stable
           cache: true
 
-      - name: Back up custom Android files
+      # Optional. Add these four repository secrets to sign every build
+      # with the same key, so new versions install over old ones:
+      #   SIGNING_KEYSTORE_BASE64, SIGNING_STORE_PASSWORD,
+      #   SIGNING_KEY_ALIAS, SIGNING_KEY_PASSWORD
+      - name: Set up signing key
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
-          mkdir -p /tmp/udt-native-backup
-
-          cp android/app/src/main/AndroidManifest.xml \
-            /tmp/udt-native-backup/AndroidManifest.xml
-
-          cp android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/MainActivity.kt \
-            /tmp/udt-native-backup/MainActivity.kt
-
-          cp android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/ApplicationInventory.kt \
-            /tmp/udt-native-backup/ApplicationInventory.kt
-
-          cp android/app/src/main/res/xml/file_paths.xml \
-            /tmp/udt-native-backup/file_paths.xml
-
-      - name: Generate Flutter project
-        run: |
-          flutter create \
-            --platforms=android \
-            --org com.ultimate.debugging \
-            --project-name ultimate_debugging_tool \
-            .
-
-      - name: Add AndroidX Core dependency
-        run: |
-          if [ -f android/app/build.gradle.kts ]; then
-            if ! grep -q 'androidx.core:core:1.15.0' android/app/build.gradle.kts; then
-              cat >> android/app/build.gradle.kts <<'EOF'
-
-          dependencies {
-              implementation("androidx.core:core:1.15.0")
-          }
-          EOF
-            fi
-
-          elif [ -f android/app/build.gradle ]; then
-            if ! grep -q 'androidx.core:core:1.15.0' android/app/build.gradle; then
-              cat >> android/app/build.gradle <<'EOF'
-
-          dependencies {
-              implementation 'androidx.core:core:1.15.0'
-          }
-          EOF
-            fi
-
+          if [ -n "$SIGNING_KEYSTORE_BASE64" ]; then
+            echo "$SIGNING_KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+            {
+              echo "storeFile=release.keystore"
+              echo "storePassword=$SIGNING_STORE_PASSWORD"
+              echo "keyAlias=$SIGNING_KEY_ALIAS"
+              echo "keyPassword=$SIGNING_KEY_PASSWORD"
+            } > android/key.properties
+            echo "Signing with the permanent key from repository secrets."
           else
-            echo "ERROR: Android app Gradle file not found."
-            exit 1
-          fi
-
-      - name: Restore custom Android files
-        run: |
-          mkdir -p android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool
-          mkdir -p android/app/src/main/res/xml
-
-          cp /tmp/udt-native-backup/AndroidManifest.xml \
-            android/app/src/main/AndroidManifest.xml
-
-          cp /tmp/udt-native-backup/MainActivity.kt \
-            android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/MainActivity.kt
-
-          cp /tmp/udt-native-backup/ApplicationInventory.kt \
-            android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/ApplicationInventory.kt
-
-          cp /tmp/udt-native-backup/file_paths.xml \
-            android/app/src/main/res/xml/file_paths.xml
-
-      - name: Verify native Android files
-        run: |
-          test -f android/app/src/main/AndroidManifest.xml
-          test -f android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/MainActivity.kt
-          test -f android/app/src/main/kotlin/com/ultimate/debugging/ultimate_debugging_tool/ApplicationInventory.kt
-          test -f android/app/src/main/res/xml/file_paths.xml
-
-          grep -q 'androidx.core.content.FileProvider' android/app/src/main/AndroidManifest.xml
-          grep -q 'apk_exports/' android/app/src/main/res/xml/file_paths.xml
-
-          if [ -f android/app/build.gradle.kts ]; then
-            grep -q 'androidx.core:core:1.15.0' android/app/build.gradle.kts
-          elif [ -f android/app/build.gradle ]; then
-            grep -q 'androidx.core:core:1.15.0' android/app/build.gradle
-          else
-            echo "ERROR: Android app Gradle file not found."
-            exit 1
+            echo "::warning title=Temporary signing key::No signing secrets are set, so this APK is signed with a temporary key. It cannot be installed over an earlier build without uninstalling first. See README, section Signing."
           fi
 
       - name: Get dependencies
-        run: flutter pub get
+        run: |
+          mkdir -p /tmp/logs
+          set -o pipefail
+          flutter pub get 2>&1 | tee /tmp/logs/1-pub-get.log
+
+      - name: Analyze Dart code
+        run: |
+          set -o pipefail
+          flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee /tmp/logs/2-analyze.log
+
+      - name: Run Dart tests
+        run: |
+          set -o pipefail
+          flutter test 2>&1 | tee /tmp/logs/3-dart-tests.log
 
       - name: Build APK
         run: |
           set -o pipefail
-          flutter build apk --release 2>&1 | tee /tmp/build.log
+          flutter build apk --release 2>&1 | tee /tmp/logs/4-build.log
 
-      - name: Report build errors
-        if: failure()
+      - name: Run native engine tests
+        working-directory: android
         run: |
-          python3 - <<'PY'
-          import os, re
-          path = '/tmp/build.log'
-          lines = open(path, errors='replace').read().splitlines() if os.path.exists(path) else []
-          keep = [l for l in lines if re.search(r'^e: |error|Error|FAILURE|What went wrong|FAILED|Exception', l)]
-          text = '\n'.join((keep or lines)[-60:])[:6000] or 'No build output was captured.'
-          text = text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-          print('::error title=Build errors::' + text)
-          PY
+          set -o pipefail
+          ./gradlew :app:testDebugUnitTest --console=plain 2>&1 | tee /tmp/logs/5-native-tests.log
 
       - name: Upload APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ultimate-debugging-tool-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      # Puts the important lines of a failed step where they are easy to
+      # find: the "Annotations" box at the top of the run page.
+      - name: Summarise failures
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import glob, os, re
+
+          def emit(title, text):
+              text = text[:7000] or 'No output was captured.'
+              text = text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print(f'::error title={title}::{text}')
+
+          logs = sorted(glob.glob('/tmp/logs/*.log'))
+          if logs:
+              last = logs[-1]
+              lines = open(last, errors='replace').read().splitlines()
+              pattern = re.compile(
+                  r'^e: |^\s*(error|warning) •|[Ee]rror:|FAILURE|FAILED|What went wrong|'
+                  r'Exception|\[E\]|Some tests failed|Expected:|Actual:|\.dart:\d+|\.kt:\d+'
+              )
+              keep = [l for l in lines if pattern.search(l)]
+              emit(os.path.basename(last), '\n'.join((keep or lines)[-70:]))
+
+          for path in glob.glob('android/app/build/test-results/**/*.xml', recursive=True):
+              data = open(path, errors='replace').read()
+              for match in re.finditer(
+                  r'<testcase name="([^"]+)" classname="([^"]+)"[^>]*>\s*<failure message="([^"]*)"', data
+              ):
+                  name, cls, message = match.groups()
+                  emit('Native test failed', f'{cls.split(".")[-1]}.{name}: {message[:1500]}')
+          PY
