@@ -170,17 +170,22 @@ class _ResetScreenState extends State<ResetScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CheckboxListTile(
-                      key: const Key('reset-approved'),
-                      value: _approved,
-                      onChanged: (value) =>
-                          setState(() => _approved = value == true),
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      title: const Text(
-                        'The owner of this phone has asked for a reset and '
-                        'understands that all data on it will be erased.',
-                        style: TextStyle(color: Colors.white70, fontSize: 13),
+                    // The tile needs its own Material: the Panel around it
+                    // has a background colour, which would hide its ink.
+                    Material(
+                      type: MaterialType.transparency,
+                      child: CheckboxListTile(
+                        key: const Key('reset-approved'),
+                        value: _approved,
+                        onChanged: (value) =>
+                            setState(() => _approved = value == true),
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        title: const Text(
+                          'The owner of this phone has asked for a reset and '
+                          'understands that all data on it will be erased.',
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
                       ),
                     ),
                   ],

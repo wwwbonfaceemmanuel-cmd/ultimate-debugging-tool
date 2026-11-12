@@ -19,14 +19,12 @@ class _AppAction {
   final String label;
   final String question;
   final String detail;
-  final bool dangerous;
 
   const _AppAction({
     required this.id,
     required this.label,
     required this.question,
     required this.detail,
-    this.dangerous = false,
   });
 }
 
@@ -148,7 +146,6 @@ class _AppWorkbenchScreenState extends State<AppWorkbenchScreen> {
       title: action.question,
       message: '${action.detail}\n\nApp: ${report.packageName}',
       confirmLabel: 'Do it',
-      dangerous: action.dangerous,
     );
 
     if (!agreed || !mounted) return;
@@ -324,18 +321,21 @@ class _AppWorkbenchScreenState extends State<AppWorkbenchScreen> {
                 onChanged: (_) => setState(() {}),
                 decoration: const InputDecoration(
                   labelText: 'Find an app',
-                  hintText: 'com.example.app',
+                  hintText: 'Search by package name',
                   prefixIcon: Icon(Icons.search),
                 ),
               ),
               const SizedBox(height: 4),
-              SwitchListTile(
-                value: _showSystem,
-                onChanged: (value) => setState(() => _showSystem = value),
-                contentPadding: EdgeInsets.zero,
-                title: const Text(
-                  'Include built-in apps',
-                  style: TextStyle(color: Colors.white70, fontSize: 13),
+              Material(
+                type: MaterialType.transparency,
+                child: SwitchListTile(
+                  value: _showSystem,
+                  onChanged: (value) => setState(() => _showSystem = value),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Include built-in apps',
+                    style: TextStyle(color: Colors.white70, fontSize: 13),
+                  ),
                 ),
               ),
             ],
