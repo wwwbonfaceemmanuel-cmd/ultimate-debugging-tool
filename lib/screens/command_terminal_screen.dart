@@ -287,7 +287,7 @@ class _CommandTerminalScreenState extends State<CommandTerminalScreen> {
           SelectableText(
             entry.output,
             style: TextStyle(
-              color: entry.failed ? AppColors.danger : const Color(0xFFD6E2F0),
+              color: entry.failed ? AppColors.danger : AppColors.consoleText,
               fontFamily: 'monospace',
               fontSize: 12.5,
               height: 1.35,

@@ -11,6 +11,9 @@ class AppColors {
   static const Color surface = Color(0xFF172638);
   static const Color surfaceDeep = Color(0xFF122235);
   static const Color console = Color(0xFF0B1424);
+  static const Color consoleText = Color(0xFFD6E2F0);
+  static const Color okDeep = Color(0xFF176B45);
+  static const Color dangerDeep = Color(0xFF38232A);
   static const Color border = Color(0xFF26384F);
   static const Color textMuted = Color(0xFF9FB0C3);
 

@@ -568,7 +568,15 @@ void main() {
 
     expect(find.text('AT RISK'), findsOneWidget);
     expect(find.text('65'), findsOneWidget);
+
+    // The findings sit below the score; the most serious comes first.
+    await tester.scrollUntilVisible(
+      find.text('Security patch'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Security patch'), findsOneWidget);
+    expect(find.text('What to do: Install system updates.'), findsOneWidget);
     expect(argsOf('saveRepairHistory')['operation'], 'Security audit');
 
     await finish(tester);
