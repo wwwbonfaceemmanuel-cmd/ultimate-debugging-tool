@@ -161,11 +161,21 @@ jobs:
               if logs:
                   last = logs[-1]
                   lines = read(last).splitlines()
-                  pattern = re.compile(
-                      r'^e: |^\s*(error|warning) •|[Ee]rror:|FAILURE|FAILED|What went wrong|'
-                      r'Exception|\[E\]|Some tests failed|Expected:|Actual:|\.dart:\d+|\.kt:\d+'
+                  # The reason first: what the test or compiler actually said.
+                  vital = re.compile(
+                      r'Expected:|Actual:|Which:|TestFailure|EXCEPTION CAUGHT|'
+                      r'overflowed|Bad state|No element|Failed to load|'
+                      r'^e: |^\s*(error|warning) •|\[E\]|Some tests failed|'
+                      r'FAILURE: Build failed|What went wrong'
                   )
-                  keep = [l for l in lines if pattern.search(l)]
+                  keep = [l for l in lines if vital.search(l)]
+
+                  if not keep:
+                      pattern = re.compile(
+                          r'[Ee]rror:|FAILURE|FAILED|Exception|\.dart:\d+|\.kt:\d+'
+                      )
+                      keep = [l for l in lines if pattern.search(l)]
+
                   emit('error', os.path.basename(last), '\n'.join((keep or lines)[-70:]))
 
           if not failed and total == 0:

@@ -171,6 +171,7 @@ class _ResetScreenState extends State<ResetScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     CheckboxListTile(
+                      key: const Key('reset-approved'),
                       value: _approved,
                       onChanged: (value) =>
                           setState(() => _approved = value == true),
@@ -202,6 +203,7 @@ class _ResetScreenState extends State<ResetScreen> {
                     ),
                     const SizedBox(height: 12),
                     FilledButton.icon(
+                      key: const Key('reset-restart'),
                       onPressed: (!_approved || !status.connected || _running)
                           ? null
                           : _restartIntoRecovery,
@@ -226,6 +228,7 @@ class _ResetScreenState extends State<ResetScreen> {
                     ),
                     const SizedBox(height: 12),
                     FilledButton.tonalIcon(
+                      key: const Key('reset-record'),
                       onPressed: _recorded ? null : _recordReset,
                       icon: Icon(_recorded ? Icons.check : Icons.history),
                       label: Text(

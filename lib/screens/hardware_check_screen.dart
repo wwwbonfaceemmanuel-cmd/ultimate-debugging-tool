@@ -287,11 +287,13 @@ class _HardwareCheckScreenState extends State<HardwareCheckScreen> {
             Row(
               children: [
                 OutlinedButton(
+                  key: Key('hardware-pass-${check.id}'),
                   onPressed: () => _record(check, 'Pass'),
                   child: const Text('Pass'),
                 ),
                 const SizedBox(width: 8),
                 OutlinedButton(
+                  key: Key('hardware-fail-${check.id}'),
                   onPressed: () => _record(check, 'Fail'),
                   child: const Text('Fail'),
                 ),

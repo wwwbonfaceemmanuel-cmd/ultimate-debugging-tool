@@ -380,6 +380,17 @@ Future<void> show(WidgetTester tester, Widget screen) async {
   await settle(tester);
 }
 
+/// A very tall phone, so long screens build completely and a test can
+/// reach a control without scrolling. The 360 pixel width is kept.
+Future<void> showTall(WidgetTester tester, Widget screen) async {
+  tester.view.devicePixelRatio = 1.0;
+  tester.view.physicalSize = const Size(360, 4000);
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(MaterialApp(theme: buildAppTheme(), home: screen));
+  await settle(tester);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -652,25 +663,16 @@ void main() {
   testWidgets('hardware check reads the phone and records a hand check',
       (tester) async {
     connectPhone();
-    await show(tester, const HardwareCheckScreen());
+    await showTall(tester, const HardwareCheckScreen());
 
     expect(called('runHardwareCheckup'), isTrue);
     expect(find.text('3 readings, 1 needing attention.'), findsOneWidget);
     expect(find.text('samsung SM-A125F'), findsOneWidget);
+    expect(find.text('Warm. Keep an eye on it while charging.'), findsOneWidget);
+    expect(find.text('1 to check'), findsOneWidget);
 
-    await tester.scrollUntilVisible(
-      find.text('Warm. Keep an eye on it while charging.'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.text('1 to check'), findsWidgets);
-
-    await tester.scrollUntilVisible(
-      find.text('Screen and pixels'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(find.text('Pass').first);
+    expect(find.text('Screen and pixels'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('hardware-pass-screen')));
     await settle(tester);
 
     final args = argsOf('saveRepairHistory');
@@ -692,49 +694,51 @@ void main() {
     await finish(tester);
   });
 
-  testWidgets('reset needs the owner agreement before it restarts',
+  testWidgets('reset will not restart the phone without the owner agreement',
       (tester) async {
     connectPhone();
-    await show(tester, const ResetScreen());
+    await showTall(tester, const ResetScreen());
 
     expect(find.text('This tool does not remove locks'), findsOneWidget);
 
-    await tester.scrollUntilVisible(
-      find.byType(Checkbox),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(find.byType(Checkbox));
+    final restart = find.byKey(const Key('reset-restart'));
+
+    // The button is there but does nothing until the box is ticked.
+    expect(tester.widget<FilledButton>(restart).onPressed, isNull);
+
+    await tester.tap(find.byKey(const Key('reset-approved')));
     await settle(tester);
 
-    await tester.scrollUntilVisible(
-      find.text('Restart into recovery'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(find.text('Restart into recovery'));
+    expect(tester.widget<FilledButton>(restart).onPressed, isNotNull);
+
+    await tester.tap(restart);
     await settle(tester);
 
-    // Nothing happens until the warning is accepted.
+    // A second, plain warning stands between the button and the phone.
     expect(called('executeRepairCommand'), isFalse);
     expect(find.text('Restart into recovery?'), findsOneWidget);
 
     await tester.tap(find.text('Restart'));
     await settle(tester);
 
-    expect(argsOf('executeRepairCommand')['operation'], 'reboot-recovery');
-    expect(argsOf('executeRepairCommand')['confirmed'], true);
+    final args = argsOf('executeRepairCommand');
+    expect(args['operation'], 'reboot-recovery');
+    expect(args['confirmed'], true);
 
-    await tester.scrollUntilVisible(
-      find.text('Record the reset'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.tap(find.text('Record the reset'));
+    await finish(tester);
+  });
+
+  testWidgets('a reset is written into the service history', (tester) async {
+    connectPhone();
+    await showTall(tester, const ResetScreen());
+
+    await tester.tap(find.byKey(const Key('reset-record')));
     await settle(tester);
 
-    expect(argsOf('saveRepairHistory')['category'], 'Reset');
-    expect(argsOf('saveRepairHistory')['operation'], 'Factory reset');
+    final args = argsOf('saveRepairHistory');
+    expect(args['category'], 'Reset');
+    expect(args['operation'], 'Factory reset');
+    expect(args['scope'], 'target');
     expect(find.text('Reset recorded'), findsOneWidget);
 
     await finish(tester);
