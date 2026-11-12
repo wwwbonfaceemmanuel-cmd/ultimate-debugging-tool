@@ -11,6 +11,7 @@ import 'screens/file_manager_screen.dart';
 import 'screens/hardware_check_screen.dart';
 import 'screens/repair_history_screen.dart';
 import 'screens/repair_tools_screen.dart';
+import 'screens/recovery_update_screen.dart';
 import 'screens/reset_screen.dart';
 import 'screens/security_center_screen.dart';
 import 'screens/target_apps_screen.dart';
@@ -62,7 +63,7 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  static final List<ToolItem> _phoneTools = [
+  static final List<ToolItem> _diagnoseTools = [
     ToolItem(
       title: 'Diagnostics',
       description: 'Battery, storage, memory, network and more.',
@@ -71,11 +72,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (context) => const DiagnosticsScreen(),
     ),
     ToolItem(
+      title: 'Hardware Check',
+      description: 'Screen, battery, sensors, radios and hand checks.',
+      icon: Icons.memory,
+      color: Colors.cyanAccent,
+      builder: (context) => const HardwareCheckScreen(),
+    ),
+    ToolItem(
+      title: 'Security Center',
+      description: 'Read-only security audit with a score.',
+      icon: Icons.shield,
+      color: Colors.redAccent,
+      builder: (context) => const SecurityCenterScreen(),
+    ),
+    ToolItem(
+      title: 'Command Terminal',
+      description: 'Read-only inspection commands.',
+      icon: Icons.terminal,
+      color: Colors.blueGrey,
+      builder: (context) => const CommandTerminalScreen(),
+    ),
+  ];
+
+  static final List<ToolItem> _repairTools = [
+    ToolItem(
       title: 'Repair Tools',
       description: 'Guided fixes that ask before they run.',
       icon: Icons.build_circle,
       color: Colors.orange,
       builder: (context) => const RepairToolsScreen(),
+    ),
+    ToolItem(
+      title: 'App Workbench',
+      description: 'Why one app misbehaves, and the repairs for it.',
+      icon: Icons.bug_report,
+      color: Colors.lightGreen,
+      builder: (context) => const AppWorkbenchScreen(),
     ),
     ToolItem(
       title: 'Apps',
@@ -92,46 +124,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
       builder: (context) => const FileManagerScreen(),
     ),
     ToolItem(
-      title: 'App Workbench',
-      description: 'Why one app misbehaves, and the repairs for it.',
-      icon: Icons.bug_report,
-      color: Colors.lightGreen,
-      builder: (context) => const AppWorkbenchScreen(),
-    ),
-    ToolItem(
-      title: 'Hardware Check',
-      description: 'Screen, battery, sensors, radios and hand checks.',
-      icon: Icons.memory,
-      color: Colors.cyanAccent,
-      builder: (context) => const HardwareCheckScreen(),
-    ),
-    ToolItem(
-      title: 'Bootloader',
-      description: 'Read a phone in fastboot mode; write one partition.',
-      icon: Icons.memory,
-      color: Colors.pinkAccent,
-      builder: (context) => const BootloaderScreen(),
-    ),
-    ToolItem(
       title: 'Reset & Wipe',
       description: 'Guided factory reset, with the warnings.',
       icon: Icons.restart_alt,
       color: Colors.deepOrange,
       builder: (context) => const ResetScreen(),
     ),
+  ];
+
+  static final List<ToolItem> _firmwareTools = [
     ToolItem(
-      title: 'Security Center',
-      description: 'Read-only security audit with a score.',
-      icon: Icons.shield,
-      color: Colors.redAccent,
-      builder: (context) => const SecurityCenterScreen(),
+      title: 'Bootloader',
+      description: 'Read a phone in fastboot mode; write one partition.',
+      icon: Icons.developer_board,
+      color: Colors.pinkAccent,
+      builder: (context) => const BootloaderScreen(),
     ),
     ToolItem(
-      title: 'Command Terminal',
-      description: 'Read-only inspection commands.',
-      icon: Icons.terminal,
-      color: Colors.blueGrey,
-      builder: (context) => const CommandTerminalScreen(),
+      title: 'Update from ADB',
+      description: 'Sideload an OTA package in recovery.',
+      icon: Icons.system_update,
+      color: Colors.purpleAccent,
+      builder: (context) => const RecoveryUpdateScreen(),
     ),
   ];
 
@@ -359,9 +373,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
               _buildConnectionCard(status),
-              const SectionTitle('Connected phone'),
-              _buildGrid(_phoneTools, status),
-              const SectionTitle('This workstation'),
+              const SectionTitle('Diagnose'),
+              _buildGrid(_diagnoseTools, status),
+              const SectionTitle('Repair'),
+              _buildGrid(_repairTools, status),
+              const SectionTitle('Firmware'),
+              _buildGrid(_firmwareTools, status),
+              const SectionTitle('This phone'),
               _buildGrid(_workstationTools, status),
               const SizedBox(height: 20),
               const Text(

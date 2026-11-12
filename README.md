@@ -21,11 +21,17 @@ No computer is needed.
 | **App Workbench** | Why one app misbehaves: version, standby bucket, background restriction, the services it keeps, its crashes and ANRs. Four repairs for that app only |
 | **Bootloader** | Talks fastboot to a phone in bootloader mode: reads product, serial, lock state, slot and partition table; writes one image to boot, init_boot, recovery, dtbo, vbmeta or vendor_boot |
 | **Reset & Wipe** | Guided factory reset: ownership agreement, restart into recovery, the wipe steps, and a record of the reset |
+| **Update from ADB** | Sends a full OTA package to a phone in recovery (the `adb sideload` job of `sideload-host`): shows name, size and SHA-256, streams it in 64 KiB blocks, follows the percentage, and records the update |
 | **Apps** | List, inspect, back up the APK (verified by size and SHA-256), stop, disable, clear data, uninstall |
 | **File Manager** | Browse shared storage, copy a file to this phone or send one to the connected phone |
 | **Security Center** | Read-only audit with a score: patch age, root, bootloader, encryption, screen lock, risky settings, app sources |
 | **Command Terminal** | A fixed list of read-only inspection commands. Free-form shell text is refused |
 | **Repair History** | Every report and repair with the phone it was done on; export as text |
+
+The dashboard groups the tools: **Diagnose** (Diagnostics, Hardware
+Check, Security Center, Command Terminal), **Repair** (Repair Tools, App
+Workbench, Apps, File Manager, Reset & Wipe), **Firmware** (Bootloader,
+Update from ADB) and **This phone** (the workstation's own tools).
 
 Diagnostics can also report on the workstation phone itself, and "Apps
 on This Phone" manages its own apps.
@@ -56,7 +62,10 @@ For Wi-Fi: connect by cable once, then tap **Continue over Wi-Fi**. Use
   and are not attempted; a failed attempt there can hard-brick a phone.
 - The tool does not unlock a bootloader. Unlocking is done on the phone
   itself, wipes the phone, and is the owner's decision.
-- Sideloading an OTA zip from recovery is not implemented yet.
+- Update from ADB sends a package; recovery still does the installing and
+  the signature check. Only a package built for that exact model is
+  accepted, and a package for a different build of the same model can
+  fail halfway. Nothing is written by this app itself.
 - Fastboot is reached over the USB port only, not over Wi-Fi.
 - File transfer handles one file at a time, up to 2 GB.
 - The ADB engine is covered by automated tests against a simulated
@@ -153,5 +162,10 @@ Safety rules built into the native side:
   image fits the size the phone reports; the SHA-256 still matches what
   was shown; the technician typed the partition name. Every write is
   recorded in the service history with its hash.
+- A sideloaded package must be a zip, must still have the hash shown
+  when it was chosen, and is sent only while a phone is connected. The
+  block count is followed and the phone's last word ("DONEDONE" or
+  "FAILFAIL") decides the result; the update is then recorded with its
+  hash.
 - The ADB private key is kept in the Android Keystore when the phone
   supports it.

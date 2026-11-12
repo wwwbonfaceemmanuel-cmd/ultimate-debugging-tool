@@ -14,6 +14,7 @@ import 'package:ultimate_debugging_tool/screens/connection_screen.dart';
 import 'package:ultimate_debugging_tool/screens/diagnostics_screen.dart';
 import 'package:ultimate_debugging_tool/screens/file_manager_screen.dart';
 import 'package:ultimate_debugging_tool/screens/hardware_check_screen.dart';
+import 'package:ultimate_debugging_tool/screens/recovery_update_screen.dart';
 import 'package:ultimate_debugging_tool/screens/repair_history_screen.dart';
 import 'package:ultimate_debugging_tool/screens/repair_tools_screen.dart';
 import 'package:ultimate_debugging_tool/screens/reset_screen.dart';
@@ -321,6 +322,24 @@ Future<Object?> fakeNative(MethodCall call) async {
           'enabled': true,
         },
       ];
+    case 'pickUpdatePackage':
+      return <String, Object?>{
+        'cancelled': false,
+        'path': '/data/user/0/app/files/updates/1-ota.zip',
+        'fileName': 'ota.zip',
+        'sizeBytes': 1073741824,
+        'sha256': 'feedface99',
+        'looksLikePackage': true,
+      };
+    case 'sideloadUpdatePackage':
+      return <String, Object?>{
+        'bytesSent': 2147483648,
+        'blocksServed': 32768,
+        'packageBytes': 1073741824,
+        'message': 'The phone accepted the package and is installing it.',
+        'sha256': args['sha256'],
+        'fileName': 'ota.zip',
+      };
     case 'getFastbootDevices':
       if (!fastbootVisible) return <Object?>[];
       return <Object?>[
@@ -497,11 +516,16 @@ void main() {
   });
 
   testWidgets('dashboard follows the live connection', (tester) async {
-    await show(tester, const DashboardScreen());
+    // Tall, so every group heading is built and can be found.
+    await showTall(tester, const DashboardScreen());
 
     expect(find.text('No phone connected'), findsOneWidget);
     expect(find.text('Connect a phone'), findsOneWidget);
+    expect(find.text('DIAGNOSE'), findsOneWidget);
+    expect(find.text('REPAIR'), findsOneWidget);
+    expect(find.text('FIRMWARE'), findsOneWidget);
     expect(find.text('Diagnostics'), findsOneWidget);
+    expect(find.text('Bootloader'), findsOneWidget);
 
     connectPhone();
     await settle(tester);
@@ -932,6 +956,49 @@ void main() {
 
     expect(find.text('No phone is in bootloader mode'), findsOneWidget);
     expect(called('connectFastboot'), isFalse);
+
+    await finish(tester);
+  });
+
+  testWidgets('an update package is checked and sideloaded',
+      (tester) async {
+    connectPhone();
+    await showTall(tester, const RecoveryUpdateScreen());
+
+    await tester.tap(find.byKey(const Key('update-pick')));
+    await settle(tester);
+
+    expect(called('pickUpdatePackage'), isTrue);
+    expect(find.text('ota.zip'), findsOneWidget);
+    expect(find.textContaining('SHA-256 feedface99'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('update-send')));
+    await settle(tester);
+    expect(find.text('Send the update package?'), findsOneWidget);
+
+    await tester.tap(find.text('Send it'));
+    await settle(tester);
+
+    final args = argsOf('sideloadUpdatePackage');
+    expect(args['path'], endsWith('1-ota.zip'));
+    expect(args['sha256'], 'feedface99');
+
+    expect(argsOf('saveRepairHistory')['category'], 'Firmware');
+    expect(argsOf('saveRepairHistory')['operation'], 'Update from ADB');
+    expect(
+      find.textContaining('is installing it'),
+      findsOneWidget,
+    );
+
+    await finish(tester);
+  });
+
+  testWidgets('the update screen asks for a phone in recovery',
+      (tester) async {
+    await showTall(tester, const RecoveryUpdateScreen());
+
+    expect(find.text('Connect the phone in recovery'), findsOneWidget);
+    expect(called('pickUpdatePackage'), isFalse);
 
     await finish(tester);
   });
