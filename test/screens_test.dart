@@ -7,12 +7,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:ultimate_debugging_tool/app/app_theme.dart';
 import 'package:ultimate_debugging_tool/main.dart';
+import 'package:ultimate_debugging_tool/screens/app_workbench_screen.dart';
+import 'package:ultimate_debugging_tool/screens/bootloader_screen.dart';
 import 'package:ultimate_debugging_tool/screens/command_terminal_screen.dart';
 import 'package:ultimate_debugging_tool/screens/connection_screen.dart';
 import 'package:ultimate_debugging_tool/screens/diagnostics_screen.dart';
 import 'package:ultimate_debugging_tool/screens/file_manager_screen.dart';
+import 'package:ultimate_debugging_tool/screens/hardware_check_screen.dart';
 import 'package:ultimate_debugging_tool/screens/repair_history_screen.dart';
 import 'package:ultimate_debugging_tool/screens/repair_tools_screen.dart';
+import 'package:ultimate_debugging_tool/screens/reset_screen.dart';
 import 'package:ultimate_debugging_tool/screens/security_center_screen.dart';
 import 'package:ultimate_debugging_tool/screens/target_apps_screen.dart';
 import 'package:ultimate_debugging_tool/services/device_bridge.dart';
@@ -43,6 +47,31 @@ const Map<String, Object?> connectedStatus = <String, Object?>{
   },
 };
 
+const String fastbootName = '/dev/bus/usb/002/003';
+
+const Map<String, Object?> fastbootInfo = <String, Object?>{
+  'product': 'a12',
+  'serial': 'R58N1',
+  'unlocked': false,
+  'unlockText': 'Locked',
+  'slots': 2,
+  'currentSlot': 'a',
+  'partitions': <Object?>[
+    <String, Object?>{
+      'name': 'boot',
+      'sizeBytes': 67108864,
+      'sizeText': '64.00 MB',
+    },
+    <String, Object?>{
+      'name': 'recovery',
+      'sizeBytes': 67108864,
+      'sizeText': '64.00 MB',
+    },
+  ],
+  'variables': <String, Object?>{'version': '0.4'},
+};
+
+bool fastbootVisible = true;
 bool nativeConnected = false;
 final List<MethodCall> calls = <MethodCall>[];
 
@@ -170,6 +199,55 @@ Future<Object?> fakeNative(MethodCall call) async {
           },
         ],
       };
+    case 'runHardwareCheckup':
+      return <String, Object?>{
+        'totalCount': 3,
+        'attentionCount': 1,
+        'summary': '3 readings, 1 needing attention.',
+        'report': 'HARDWARE CHECK\nPhone: samsung SM-A125F',
+        'sections': <Object?>[
+          <String, Object?>{
+            'title': 'Identity',
+            'items': <Object?>[
+              <String, Object?>{
+                'name': 'Phone',
+                'value': 'samsung SM-A125F',
+                'status': 'INFO',
+                'advice': '',
+              },
+            ],
+          },
+          <String, Object?>{
+            'title': 'Battery',
+            'items': <Object?>[
+              <String, Object?>{
+                'name': 'Charge level',
+                'value': '74 %',
+                'status': 'INFO',
+                'advice': '',
+              },
+              <String, Object?>{
+                'name': 'Battery temperature',
+                'value': '45.5 \u00b0C',
+                'status': 'ATTENTION',
+                'advice': 'Warm. Keep an eye on it while charging.',
+              },
+            ],
+          },
+        ],
+        'manualChecks': <Object?>[
+          <String, Object?>{
+            'id': 'screen',
+            'title': 'Screen and pixels',
+            'instruction': 'Open a white picture, then a black one.',
+          },
+          <String, Object?>{
+            'id': 'charging',
+            'title': 'Charging port',
+            'instruction': 'Plug in the charger and watch the battery icon.',
+          },
+        ],
+      };
     case 'getTerminalCommands':
       return <Object?>[
         <String, Object?>{
@@ -243,6 +321,63 @@ Future<Object?> fakeNative(MethodCall call) async {
           'enabled': true,
         },
       ];
+    case 'getFastbootDevices':
+      if (!fastbootVisible) return <Object?>[];
+      return <Object?>[
+        <String, Object?>{
+          'deviceName': fastbootName,
+          'vendorId': 0x04e8,
+          'productId': 0x6860,
+          'manufacturerName': 'samsung',
+          'productName': 'SM-A125F',
+          'interfaceId': 0,
+          'hasPermission': true,
+        },
+      ];
+    case 'connectFastboot':
+      return fastbootInfo;
+    case 'getFastbootInfo':
+      return fastbootInfo;
+    case 'pickBootImage':
+      return <String, Object?>{
+        'cancelled': false,
+        'path': '/data/user/0/app/files/boot_images/1-boot.img',
+        'fileName': 'boot.img',
+        'sizeBytes': 33554432,
+        'sha256': 'abc123def456',
+      };
+    case 'flashFastbootImage':
+      return <String, Object?>{
+        'partition': args['partition'],
+        'sizeBytes': 33554432,
+        'sha256': args['sha256'],
+        'message': 'The boot partition was written.',
+      };
+    case 'rebootFastboot':
+      return true;
+    case 'disconnectFastboot':
+      return true;
+    case 'getAppDiagnosis':
+      return <String, Object?>{
+        'packageName': args['packageName'],
+        'versionName': '2.24.1',
+        'versionCode': '2241',
+        'targetSdk': '34',
+        'system': false,
+        'enabled': true,
+        'running': true,
+        'standbyBucket': 'Working set',
+        'background': 'Blocked from running in the background',
+        'alarmCount': 3,
+        'services': <Object?>['com.example.app/.Sync'],
+        'crashes': <Object?>[
+          'E AndroidRuntime: FATAL EXCEPTION: main',
+          'E AndroidRuntime: Process: com.example.app, PID: 4321',
+        ],
+        'anrs': <Object?>[],
+        'verdict': 'The app has crashed recently.',
+        'report': 'APP DIAGNOSIS - com.example.app\nVersion: 2.24.1',
+      };
     case 'getTargetApplicationDetails':
       return <String, Object?>{
         'packageName': args['packageName'],
@@ -329,12 +464,24 @@ Future<void> show(WidgetTester tester, Widget screen) async {
   await settle(tester);
 }
 
+/// A very tall phone, so long screens build completely and a test can
+/// reach a control without scrolling. The 360 pixel width is kept.
+Future<void> showTall(WidgetTester tester, Widget screen) async {
+  tester.view.devicePixelRatio = 1.0;
+  tester.view.physicalSize = const Size(360, 4000);
+  addTearDown(tester.view.reset);
+
+  await tester.pumpWidget(MaterialApp(theme: buildAppTheme(), home: screen));
+  await settle(tester);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
     calls.clear();
     nativeConnected = false;
+    fastbootVisible = true;
     DeviceBridge.instance.status.value = AdbStatus.disconnected;
 
     final messenger =
@@ -594,6 +741,197 @@ void main() {
 
     expect(find.text('Restart Wi-Fi'), findsNothing);
     expect(find.text('Report: Battery'), findsOneWidget);
+
+    await finish(tester);
+  });
+
+  testWidgets('hardware check reads the phone and records a hand check',
+      (tester) async {
+    connectPhone();
+    await showTall(tester, const HardwareCheckScreen());
+
+    expect(called('runHardwareCheckup'), isTrue);
+    expect(find.text('3 readings, 1 needing attention.'), findsOneWidget);
+    expect(find.text('samsung SM-A125F'), findsOneWidget);
+    expect(find.text('Warm. Keep an eye on it while charging.'), findsOneWidget);
+    expect(find.text('1 to check'), findsOneWidget);
+
+    expect(find.text('Screen and pixels'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('hardware-pass-screen')));
+    await settle(tester);
+
+    final args = argsOf('saveRepairHistory');
+    expect(args['category'], 'Hardware check');
+    expect(args['operation'], 'Hardware check: Screen and pixels');
+    expect(args['result'], 'Pass');
+    expect(args['scope'], 'target');
+    expect(find.text('PASSED'), findsOneWidget);
+
+    await finish(tester);
+  });
+
+  testWidgets('hardware check needs a phone first', (tester) async {
+    await show(tester, const HardwareCheckScreen());
+
+    expect(find.text('Connect a phone first'), findsOneWidget);
+    expect(called('runHardwareCheckup'), isFalse);
+
+    await finish(tester);
+  });
+
+  testWidgets('reset will not restart the phone without the owner agreement',
+      (tester) async {
+    connectPhone();
+    await showTall(tester, const ResetScreen());
+
+    expect(find.text('This tool does not remove locks'), findsOneWidget);
+
+    final restart = find.byKey(const Key('reset-restart'));
+
+    // The button is there but does nothing until the box is ticked.
+    expect(tester.widget<FilledButton>(restart).onPressed, isNull);
+
+    await tester.tap(find.byKey(const Key('reset-approved')));
+    await settle(tester);
+
+    expect(tester.widget<FilledButton>(restart).onPressed, isNotNull);
+
+    await tester.tap(restart);
+    await settle(tester);
+
+    // A second, plain warning stands between the button and the phone.
+    expect(called('executeRepairCommand'), isFalse);
+    expect(find.text('Restart into recovery?'), findsOneWidget);
+
+    await tester.tap(find.text('Restart'));
+    await settle(tester);
+
+    final args = argsOf('executeRepairCommand');
+    expect(args['operation'], 'reboot-recovery');
+    expect(args['confirmed'], true);
+
+    await finish(tester);
+  });
+
+  testWidgets('a reset is written into the service history', (tester) async {
+    connectPhone();
+    await showTall(tester, const ResetScreen());
+
+    await tester.tap(find.byKey(const Key('reset-record')));
+    await settle(tester);
+
+    final args = argsOf('saveRepairHistory');
+    expect(args['category'], 'Reset');
+    expect(args['operation'], 'Factory reset');
+    expect(args['scope'], 'target');
+    expect(find.text('Reset recorded'), findsOneWidget);
+
+    await finish(tester);
+  });
+
+  testWidgets('the app workbench explains an app and clears its cache',
+      (tester) async {
+    connectPhone();
+    await showTall(tester, const AppWorkbenchScreen());
+
+    expect(called('getTargetApplications'), isTrue);
+    expect(find.text('com.example.app'), findsOneWidget);
+
+    await tester.tap(find.text('com.example.app'));
+    await settle(tester);
+
+    expect(argsOf('getAppDiagnosis')['packageName'], 'com.example.app');
+    expect(find.text('The app has crashed recently.'), findsOneWidget);
+    expect(find.textContaining('APP DIAGNOSIS'), findsWidgets);
+
+    await tester.tap(find.byKey(const Key('app-action-clear-app-cache')));
+    await settle(tester);
+    expect(find.text('Clear only the cache?'), findsOneWidget);
+
+    await tester.tap(find.text('Do it'));
+    await settle(tester);
+
+    final args = argsOf('executeRepairCommand');
+    expect(args['operation'], 'clear-app-cache');
+    expect(args['packageName'], 'com.example.app');
+    expect(args['confirmed'], true);
+
+    await finish(tester);
+  });
+
+  testWidgets('the app workbench needs a phone first', (tester) async {
+    await show(tester, const AppWorkbenchScreen());
+
+    expect(find.text('Connect a phone first'), findsOneWidget);
+    expect(called('getTargetApplications'), isFalse);
+
+    await finish(tester);
+  });
+
+  testWidgets('the bootloader reads a phone in fastboot mode',
+      (tester) async {
+    await showTall(tester, const BootloaderScreen());
+
+    expect(called('getFastbootDevices'), isTrue);
+    expect(find.textContaining('SM-A125F'), findsWidgets);
+
+    await tester.tap(find.text('Connect'));
+    await settle(tester);
+
+    expect(argsOf('connectFastboot')['deviceName'], fastbootName);
+    expect(find.text('a12'), findsOneWidget);
+    expect(find.text('LOCKED'), findsOneWidget);
+    expect(find.text('Serial R58N1 - slot a of 2'), findsOneWidget);
+    expect(find.text('64.00 MB'), findsWidgets);
+
+    await finish(tester);
+  });
+
+  testWidgets('flashing needs the partition typed out first',
+      (tester) async {
+    await showTall(tester, const BootloaderScreen());
+
+    await tester.tap(find.text('Connect'));
+    await settle(tester);
+    await tester.tap(find.byKey(const Key('boot-pick-image')));
+    await settle(tester);
+
+    expect(called('pickBootImage'), isTrue);
+    expect(find.text('boot.img'), findsOneWidget);
+    expect(find.textContaining('SHA-256 abc123def456'), findsOneWidget);
+
+    // Nothing happens until the partition name is typed.
+    final flash = find.byKey(const Key('boot-flash'));
+    expect(tester.widget<FilledButton>(flash).onPressed, isNull);
+
+    await tester.enterText(find.byType(TextField).last, 'boot');
+    await settle(tester);
+    expect(tester.widget<FilledButton>(flash).onPressed, isNotNull);
+
+    await tester.tap(flash);
+    await settle(tester);
+    expect(find.text('Write to the boot partition?'), findsOneWidget);
+
+    await tester.tap(find.text('Write it'));
+    await settle(tester);
+
+    final args = argsOf('flashFastbootImage');
+    expect(args['partition'], 'boot');
+    expect(args['sha256'], 'abc123def456');
+    expect(args['path'], endsWith('1-boot.img'));
+    expect(argsOf('saveRepairHistory')['category'], 'Bootloader');
+    expect(find.text('The boot partition was written.'), findsWidgets);
+
+    await finish(tester);
+  });
+
+  testWidgets('the bootloader explains when no phone is in fastboot',
+      (tester) async {
+    fastbootVisible = false;
+    await showTall(tester, const BootloaderScreen());
+
+    expect(find.text('No phone is in bootloader mode'), findsOneWidget);
+    expect(called('connectFastboot'), isFalse);
 
     await finish(tester);
   });

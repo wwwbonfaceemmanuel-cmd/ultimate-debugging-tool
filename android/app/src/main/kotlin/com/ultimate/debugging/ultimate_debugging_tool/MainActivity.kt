@@ -34,8 +34,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  - AdbSessionManager      the single ADB session (USB or wireless)
  *  - TargetDiagnostics      reports about the connected phone
  *  - SecurityAudit          security check-up of the connected phone
+ *  - HardwareInspector      hardware check-up of the connected phone
  *  - TerminalCommands       the read-only terminal command list
  *  - RepairServices         approved repair services
+ *  - AppDiagnosis           why one app on the connected phone misbehaves
  *  - TargetApps/TargetFiles apps and files on the connected phone
  *  - LocalDeviceReports     reports about this phone
  *
@@ -53,6 +55,7 @@ class MainActivity : FlutterActivity() {
             "com.ultimate.debugging.USB_PERMISSION"
 
         private const val REQUEST_PICK_FILE = 4201
+        private const val REQUEST_PICK_IMAGE = 4202
         private const val WIRELESS_PORT = 5555
         private const val MAX_TRANSFER_AGE_MS = 24L * 60 * 60 * 1000
     }
@@ -96,6 +99,10 @@ class MainActivity : FlutterActivity() {
         Thread(task, "UDT-Worker").apply { isDaemon = true }
     }
 
+    /** The phone in bootloader mode, when one is connected. */
+    @Volatile
+    private var fastboot: FastbootSession? = null
+
     @Volatile
     private var eventSink: EventChannel.EventSink? = null
 
@@ -106,6 +113,9 @@ class MainActivity : FlutterActivity() {
 
     // Main thread only.
     private var pendingPush: Pair<Reply, String>? = null
+
+    // Main thread only.
+    private var pendingImage: Reply? = null
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -265,6 +275,51 @@ class MainActivity : FlutterActivity() {
                 true
             }
 
+            // ----- Bootloader (fastboot) -----
+
+            "getFastbootDevices" -> reply.success(fastbootDevices())
+
+            "connectFastboot" -> {
+                val deviceName = requireText(
+                    call,
+                    "deviceName",
+                    "USB device name is required."
+                )
+
+                async(reply, "FASTBOOT_ERROR") { connectFastboot(deviceName) }
+            }
+
+            "disconnectFastboot" -> {
+                fastboot?.close()
+                fastboot = null
+                true
+            }
+
+            "pickBootImage" -> pickBootImage(reply)
+
+            "flashFastbootImage" -> {
+                val partition = requireText(call, "partition", "A partition is required.")
+                val path = requireText(call, "path", "Choose an image first.")
+                val sha256 = requireText(call, "sha256", "The image checksum is required.")
+
+                async(reply, "FASTBOOT_FLASH_ERROR") {
+                    flashFastbootImage(partition, path, sha256)
+                }
+            }
+
+            "getFastbootInfo" -> async(reply, "FASTBOOT_ERROR") {
+                requireFastboot().deviceInfo().toMap()
+            }
+
+            "rebootFastboot" -> {
+                val target = call.argument<String>("target").orEmpty()
+
+                async(reply, "FASTBOOT_ERROR") {
+                    requireFastboot().reboot(target)
+                    true
+                }
+            }
+
             // ----- Diagnostics -----
 
             "getDiagnosticReports" -> reply.success(
@@ -288,6 +343,10 @@ class MainActivity : FlutterActivity() {
 
             "runSecurityAudit" -> async(reply, "SECURITY_AUDIT_ERROR") {
                 SecurityAudit(session).run().toMap()
+            }
+
+            "runHardwareCheckup" -> async(reply, "HARDWARE_CHECK_ERROR") {
+                HardwareInspector(session).run().toMap()
             }
 
             // ----- Terminal -----
@@ -335,6 +394,14 @@ class MainActivity : FlutterActivity() {
                     val root = File(filesDir, "apk_exports")
                     removeOldFiles(root)
                     TargetApps(session).backupApk(packageName, root)
+                }
+            }
+
+            "getAppDiagnosis" -> {
+                val packageName = requireText(call, "packageName", "A package name is required.")
+
+                async(reply, "APP_DIAGNOSIS_ERROR") {
+                    AppDiagnosis(session).inspect(packageName).toMap()
                 }
             }
 
@@ -491,6 +558,216 @@ class MainActivity : FlutterActivity() {
 
         override fun notImplemented() =
             reply.error("NOT_IMPLEMENTED", "The operation is not available.")
+    }
+
+    // ------------------------------------------------------------------
+    // Bootloader
+    // ------------------------------------------------------------------
+
+    /** USB devices that are sitting in their bootloader. */
+    private fun fastbootDevices(): List<Map<String, Any?>> {
+        val found = ArrayList<Map<String, Any?>>()
+
+        for (device in usbManager.deviceList.values) {
+            val face = (0 until device.interfaceCount)
+                .map { device.getInterface(it) }
+                .firstOrNull {
+                    it.interfaceClass == FastbootUsbTransport.FASTBOOT_CLASS &&
+                        it.interfaceSubclass == FastbootUsbTransport.FASTBOOT_SUBCLASS &&
+                        it.interfaceProtocol == FastbootUsbTransport.FASTBOOT_PROTOCOL
+                } ?: continue
+
+            found.add(
+                linkedMapOf(
+                    "deviceName" to device.deviceName,
+                    "deviceId" to device.deviceId,
+                    "vendorId" to device.vendorId,
+                    "productId" to device.productId,
+                    "manufacturerName" to device.manufacturerName.orEmpty(),
+                    "productName" to device.productName.orEmpty(),
+                    "interfaceId" to face.id,
+                    "hasPermission" to usbManager.hasPermission(device)
+                )
+            )
+        }
+
+        return found
+    }
+
+    private fun pickBootImage(reply: Reply) {
+        pendingImage?.error("FILE_PICK_REPLACED", "Another image was requested.")
+        pendingImage = reply
+
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(
+                Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                },
+                REQUEST_PICK_IMAGE
+            )
+        } catch (e: Exception) {
+            pendingImage = null
+            throw RequestError(
+                "FILE_PICK_ERROR",
+                "No file chooser is available on this phone."
+            )
+        }
+    }
+
+    /** Copies the chosen image into the app, hashes it, and reports it. */
+    private fun handlePickedImage(resultCode: Int, data: Intent?) {
+        val reply = pendingImage ?: return
+        pendingImage = null
+
+        val uri: Uri? = data?.data
+
+        if (resultCode != RESULT_OK || uri == null) {
+            reply.success(mapOf("cancelled" to true))
+            return
+        }
+
+        async(reply, "BOOT_IMAGE_ERROR") {
+            val directory = File(filesDir, "boot_images").apply { mkdirs() }
+            removeOldFiles(directory)
+
+            val name = displayName(uri)
+            val safeName = name.replace('/', '_').replace('\\', '_')
+            val target = File(directory, "${System.currentTimeMillis()}-$safeName")
+
+            val input = contentResolver.openInputStream(uri)
+                ?: throw IOException("The chosen image could not be opened.")
+
+            input.use { source ->
+                target.outputStream().use { sink -> source.copyTo(sink) }
+            }
+
+            mapOf(
+                "cancelled" to false,
+                "path" to target.absolutePath,
+                "fileName" to name,
+                "sizeBytes" to target.length(),
+                "sha256" to sha256Of(target)
+            )
+        }
+    }
+
+    private fun sha256Of(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+
+        file.inputStream().use { stream ->
+            val buffer = ByteArray(64 * 1024)
+
+            while (true) {
+                val read = stream.read(buffer)
+                if (read <= 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+
+        return digest.digest().joinToString("") {
+            String.format(java.util.Locale.US, "%02x", it)
+        }
+    }
+
+    /**
+     * Writes one image to one partition, but only after checking that
+     * the file still has the checksum the technician confirmed.
+     */
+    private fun flashFastbootImage(
+        partition: String,
+        path: String,
+        sha256: String
+    ): Map<String, Any?> {
+        val session = requireFastboot()
+
+        val directory = File(filesDir, "boot_images").canonicalFile
+        val image = File(path).canonicalFile
+
+        if (!image.path.startsWith(directory.path + File.separator)) {
+            throw RequestError(
+                "INVALID_IMAGE",
+                "Choose the image with this tool first."
+            )
+        }
+
+        if (!image.isFile) {
+            throw RequestError("INVALID_IMAGE", "The image file is gone. Choose it again.")
+        }
+
+        val bytes = image.readBytes()
+        val actual = sha256Of(image)
+
+        if (!actual.equals(sha256, ignoreCase = true)) {
+            throw RequestError(
+                "IMAGE_CHANGED",
+                "The image changed since it was checked. Choose it again."
+            )
+        }
+
+        val message = session.flash(partition, bytes)
+
+        return linkedMapOf(
+            "partition" to partition,
+            "sizeBytes" to bytes.size,
+            "sha256" to actual,
+            "message" to message
+        )
+    }
+
+    private fun requireFastboot(): FastbootSession {
+        return fastboot ?: throw RequestError(
+            "FASTBOOT_NOT_CONNECTED",
+            "Connect a phone in bootloader mode first."
+        )
+    }
+
+    private fun connectFastboot(deviceName: String): Map<String, Any?> {
+        val device = usbManager.deviceList[deviceName]
+            ?: throw RequestError("DEVICE_NOT_FOUND", "USB device is no longer connected.")
+
+        if (!usbManager.hasPermission(device)) {
+            throw RequestError(
+                "USB_PERMISSION_REQUIRED",
+                "Allow USB access for this device first."
+            )
+        }
+
+        val interfaceId = (0 until device.interfaceCount)
+            .map { device.getInterface(it) }
+            .firstOrNull {
+                it.interfaceClass == FastbootUsbTransport.FASTBOOT_CLASS &&
+                    it.interfaceSubclass == FastbootUsbTransport.FASTBOOT_SUBCLASS &&
+                    it.interfaceProtocol == FastbootUsbTransport.FASTBOOT_PROTOCOL
+            }
+            ?.id
+            ?: throw RequestError(
+                "FASTBOOT_INTERFACE_NOT_FOUND",
+                "This phone is not in bootloader mode. Restart it into the bootloader first."
+            )
+
+        fastboot?.close()
+        fastboot = null
+
+        val transport = FastbootUsbTransport(usbManager, device, interfaceId)
+
+        try {
+            transport.open()
+        } catch (e: IOException) {
+            throw RequestError("FASTBOOT_ERROR", e.message ?: "The bootloader could not be opened.")
+        }
+
+        val session = FastbootSession(transport)
+
+        try {
+            val info = session.deviceInfo()
+            fastboot = session
+            return info.toMap()
+        } catch (e: Exception) {
+            session.close()
+            throw e
+        }
     }
 
     // ------------------------------------------------------------------
@@ -871,6 +1148,11 @@ class MainActivity : FlutterActivity() {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
 
+        if (requestCode == REQUEST_PICK_IMAGE) {
+            handlePickedImage(resultCode, data)
+            return
+        }
+
         if (requestCode != REQUEST_PICK_FILE) return
 
         val (reply, directory) = pendingPush ?: return
@@ -970,6 +1252,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         activityDestroyed = true
+        fastboot?.close()
+        fastboot = null
 
         if (receiverRegistered) {
             try {
@@ -991,6 +1275,7 @@ class MainActivity : FlutterActivity() {
         worker.shutdownNow()
         eventSink = null
         pendingPush = null
+        pendingImage = null
 
         super.onDestroy()
     }

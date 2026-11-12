@@ -6,7 +6,9 @@ OTG adapter) or over Wi-Fi, and inspect, diagnose and repair it over ADB.
 No computer is needed.
 
 > Use it only on phones you own or have been asked to service. It does
-> not remove screen locks, bypass account locks or flash firmware.
+> not remove screen locks or bypass account locks. It can write a
+> firmware image to a phone in bootloader mode, but only to the six
+> partitions listed below, and only after several checks.
 
 ## What it does
 
@@ -14,7 +16,11 @@ No computer is needed.
 | --- | --- |
 | **Connection** | USB and Wi-Fi sessions, approval prompt guidance, cancel, "continue over Wi-Fi" from a cable session |
 | **Diagnostics** | Device identity, battery, storage, memory, network, temperature, uptime, apps summary, full technician report |
-| **Repair Tools** | 30 guided services (apps, network, storage, display, power). Each one explains itself, asks first, is checked afterwards and is recorded |
+| **Repair Tools** | 34 guided services (apps, network, storage, display, power). Each one explains itself, asks first, is checked afterwards and is recorded |
+| **Hardware Check** | Screen, input devices, sensors, battery, storage, cameras, radios, boot state and thermal status with a verdict each, plus eight checks the technician performs by hand and records |
+| **App Workbench** | Why one app misbehaves: version, standby bucket, background restriction, the services it keeps, its crashes and ANRs. Four repairs for that app only |
+| **Bootloader** | Talks fastboot to a phone in bootloader mode: reads product, serial, lock state, slot and partition table; writes one image to boot, init_boot, recovery, dtbo, vbmeta or vendor_boot |
+| **Reset & Wipe** | Guided factory reset: ownership agreement, restart into recovery, the wipe steps, and a record of the reset |
 | **Apps** | List, inspect, back up the APK (verified by size and SHA-256), stop, disable, clear data, uninstall |
 | **File Manager** | Browse shared storage, copy a file to this phone or send one to the connected phone |
 | **Security Center** | Read-only audit with a score: patch age, root, bootloader, encryption, screen lock, risky settings, app sources |
@@ -41,6 +47,17 @@ For Wi-Fi: connect by cable once, then tap **Continue over Wi-Fi**. Use
 
 - The pairing code of Android 11+ "Wireless debugging" is not supported.
   Wi-Fi works through the cable-first method above.
+- Nothing here removes a screen lock, a PIN or a Google account (FRP)
+  check. On modern Android the data is encrypted with the lock
+  credential, so a reset is the only honest way forward, and the phone
+  still asks for the account that was on it.
+- Bootloader writing covers fastboot only. Qualcomm EDL (9008), MediaTek
+  BROM/SP Flash Tool and Samsung Odin need vendor-signed download agents
+  and are not attempted; a failed attempt there can hard-brick a phone.
+- The tool does not unlock a bootloader. Unlocking is done on the phone
+  itself, wipes the phone, and is the owner's decision.
+- Sideloading an OTA zip from recovery is not implemented yet.
+- Fastboot is reached over the USB port only, not over Wi-Fi.
 - File transfer handles one file at a time, up to 2 GB.
 - The ADB engine is covered by automated tests against a simulated
   phone. Test on real hardware before relying on a build.
@@ -113,8 +130,10 @@ android/app/src/main/kotlin/.../
   MainActivity.kt              routes requests, nothing else
   Adb*.kt                      ADB engine: protocol, USB and TCP transports,
                                authentication, streams, shell, file sync
-  Target*.kt, SecurityAudit.kt, RepairServices.kt, TerminalCommands.kt
+  Target*.kt, SecurityAudit.kt, RepairServices.kt, TerminalCommands.kt,
+  HardwareInspector.kt, AppDiagnosis.kt
                                tools that work on the connected phone
+  Fastboot*.kt                 the fastboot engine and its USB link
   Local*.kt, Apk*.kt, Application*.kt, Usb*.kt
                                tools that work on the workstation phone
 android/app/src/test/          native tests, run against a simulated phone
@@ -127,7 +146,12 @@ Safety rules built into the native side:
   are validated and quoted.
 - Repairs run only from a fixed catalog, need explicit confirmation, and
   refuse protected and system packages where that would be harmful.
-- Copied files and APK backups stay in the app's private storage, are
-  shared only through Android's share sheet, and are deleted after 24 h.
+- Copied files, APK backups and chosen firmware images stay in the app's
+  private storage, are shared only through Android's share sheet, and are
+  deleted after 24 h.
+- Firmware writing checks, in order: the partition is one of six; the
+  image fits the size the phone reports; the SHA-256 still matches what
+  was shown; the technician typed the partition name. Every write is
+  recorded in the service history with its hash.
 - The ADB private key is kept in the Android Keystore when the phone
   supports it.
