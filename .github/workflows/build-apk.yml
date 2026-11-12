@@ -4,8 +4,6 @@ name: Build Ultimate Debugging Tool APK
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
 
 permissions:
   contents: read
