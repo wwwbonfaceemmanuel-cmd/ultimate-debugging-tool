@@ -120,7 +120,22 @@ jobs:
         run: flutter pub get
 
       - name: Build APK
-        run: flutter build apk --release
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee /tmp/build.log
+
+      - name: Report build errors
+        if: failure()
+        run: |
+          python3 - <<'PY'
+          import os, re
+          path = '/tmp/build.log'
+          lines = open(path, errors='replace').read().splitlines() if os.path.exists(path) else []
+          keep = [l for l in lines if re.search(r'^e: |error|Error|FAILURE|What went wrong|FAILED|Exception', l)]
+          text = '\n'.join((keep or lines)[-60:])[:6000] or 'No build output was captured.'
+          text = text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::error title=Build errors::' + text)
+          PY
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
