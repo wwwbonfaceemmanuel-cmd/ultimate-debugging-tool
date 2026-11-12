@@ -1,5 +1,7 @@
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
+import '../app/app_theme.dart';
 import 'package:flutter/services.dart';
 
 import '../services/application_inventory_service.dart';
@@ -58,7 +60,7 @@ class AppDetailsScreen extends StatelessWidget {
     IconData? icon,
   }) {
     return Card(
-      color: const Color(0xFF172638),
+      color: AppColors.surface,
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
         leading: icon == null
@@ -123,7 +125,7 @@ class AppDetailsScreen extends StatelessWidget {
 
   Widget _buildPermissionsButton(BuildContext context) {
     return Card(
-      color: const Color(0xFF172638),
+      color: AppColors.surface,
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
         leading: const Icon(
@@ -215,7 +217,7 @@ class AppDetailsScreen extends StatelessWidget {
             final fingerprint = entry.value;
 
             return Card(
-              color: const Color(0xFF172638),
+              color: AppColors.surface,
               margin: const EdgeInsets.only(bottom: 10),
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -278,7 +280,7 @@ class AppDetailsScreen extends StatelessWidget {
           ),
 
         Card(
-          color: const Color(0xFF172638),
+          color: AppColors.surface,
           margin: const EdgeInsets.only(bottom: 10),
           child: const Padding(
             padding: EdgeInsets.all(14),
@@ -359,7 +361,7 @@ class AppDetailsScreen extends StatelessWidget {
         ),
 
         Card(
-          color: const Color(0xFF172638),
+          color: AppColors.surface,
           margin: const EdgeInsets.only(bottom: 10),
           child: Padding(
             padding: const EdgeInsets.all(14),
@@ -416,9 +418,9 @@ class AppDetailsScreen extends StatelessWidget {
         : 'USER APPLICATION';
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1424),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF101D32),
+        backgroundColor: AppColors.background,
         foregroundColor: Colors.white,
         title: const Text('Application Details'),
       ),
@@ -427,7 +429,7 @@ class AppDetailsScreen extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           children: [
             Card(
-              color: const Color(0xFF172638),
+              color: AppColors.surface,
               child: Padding(
                 padding: const EdgeInsets.all(20),
                 child: Column(
@@ -435,7 +437,7 @@ class AppDetailsScreen extends StatelessWidget {
                     CircleAvatar(
                       radius: 35,
                       backgroundColor:
-                          Colors.lightBlueAccent.withOpacity(0.15),
+                          Colors.lightBlueAccent.withValues(alpha: 0.15),
                       child: Icon(
                         app.isSystemApp
                             ? Icons.settings
@@ -490,7 +492,7 @@ class AppDetailsScreen extends StatelessWidget {
             ),
 
             Card(
-              color: const Color(0xFF172638),
+              color: AppColors.surface,
               child: ListTile(
                 leading: const Icon(
                   Icons.inventory_2,

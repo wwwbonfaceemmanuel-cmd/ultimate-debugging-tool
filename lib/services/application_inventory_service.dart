@@ -1,6 +1,8 @@
 
 import 'package:flutter/services.dart';
 
+import 'device_bridge.dart';
+
 enum ApplicationRisk {
   low,
   medium,
@@ -245,7 +247,7 @@ class _ApplicationClassification {
 
 class ApplicationInventoryService {
   static const MethodChannel _channel =
-      MethodChannel('com.ultimate.debugging/usb');
+      MethodChannel(kMethodChannelName);
 
   Future<List<InstalledApplication>>
       getInstalledApplications() async {

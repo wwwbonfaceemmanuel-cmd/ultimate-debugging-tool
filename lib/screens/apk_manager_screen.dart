@@ -1,6 +1,8 @@
 
 import 'app_details_screen.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
+
+import '../app/app_theme.dart';
 
 import '../services/application_inventory_service.dart';
 
@@ -118,7 +120,7 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
         context: context,
         builder: (dialogContext) {
           return AlertDialog(
-            backgroundColor: const Color(0xFF172638),
+            backgroundColor: AppColors.surface,
             title: const Row(
               children: [
                 Icon(
@@ -233,7 +235,7 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('$appName backup is ready to share.'),
-            backgroundColor: const Color(0xFF176B45),
+            backgroundColor: AppColors.okDeep,
           ),
         );
       } else {
@@ -262,7 +264,7 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
         _applications.where((app) => app.isSystemApp).length;
 
     return Card(
-      color: const Color(0xFF172638),
+      color: AppColors.surface,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -424,7 +426,7 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
         _backingUpPackages.contains(app.packageName);
 
     return Card(
-      color: const Color(0xFF172638),
+      color: AppColors.surface,
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
         onTap: () {
@@ -437,7 +439,7 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
         },
         contentPadding: const EdgeInsets.all(12),
         leading: CircleAvatar(
-          backgroundColor: appColor.withOpacity(0.15),
+          backgroundColor: appColor.withValues(alpha: 0.15),
           child: Icon(
             app.isSystemApp ? Icons.settings : Icons.android,
             color: appColor,
@@ -532,7 +534,7 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
         vertical: 4,
       ),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(5),
       ),
       child: Text(
@@ -557,11 +559,11 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
     final visibleApplications = _filteredApplications;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0B1424),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF101D32),
+        backgroundColor: AppColors.background,
         foregroundColor: Colors.white,
-        title: const Text('APK & Application Manager'),
+        title: const Text('Apps on This Phone'),
         actions: [
           IconButton(
             onPressed: _loading ? null : _loadApplications,
@@ -602,7 +604,7 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
                         ),
                         prefixIcon: const Icon(Icons.search),
                         filled: true,
-                        fillColor: const Color(0xFF172638),
+                        fillColor: AppColors.surface,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
@@ -626,7 +628,7 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
                     const SizedBox(height: 12),
                     if (_error != null)
                       Card(
-                        color: const Color(0xFF38232A),
+                        color: AppColors.dangerDeep,
                         child: Padding(
                           padding: const EdgeInsets.all(16),
                           child: Column(

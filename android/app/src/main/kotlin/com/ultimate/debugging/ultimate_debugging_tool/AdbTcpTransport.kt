@@ -296,7 +296,14 @@ class AdbTcpTransport(
         message: String,
         cause: Throwable
     ): IOException {
-        return IOException(message, cause)
+        val detail = cause.message
+
+        return if (detail.isNullOrBlank()) {
+            IOException(message, cause)
+        } else {
+            // Keep the real reason visible to the technician.
+            IOException(detail, cause)
+        }
     }
 
     override fun close() {
