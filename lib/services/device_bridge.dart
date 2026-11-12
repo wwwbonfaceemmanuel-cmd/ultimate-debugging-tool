@@ -459,6 +459,112 @@ class SecurityAuditResult {
   });
 }
 
+/// One reading from the hardware check-up.
+class HardwareItem {
+  final String name;
+  final String value;
+  final String status;
+  final String advice;
+
+  const HardwareItem({
+    required this.name,
+    required this.value,
+    this.status = 'INFO',
+    this.advice = '',
+  });
+
+  /// True when the reading needs the technician's attention.
+  bool get needsAttention => status == 'ATTENTION' || status == 'FAIL';
+
+  factory HardwareItem.fromMap(Map<String, dynamic> map) {
+    return HardwareItem(
+      name: asText(map['name'], 'Reading'),
+      value: asText(map['value'], 'Unavailable'),
+      status: asText(map['status'], 'INFO'),
+      advice: asText(map['advice']),
+    );
+  }
+}
+
+/// One group of hardware readings, for example the battery.
+class HardwareSection {
+  final String title;
+  final List<HardwareItem> items;
+
+  const HardwareSection(this.title, this.items);
+
+  int get attentionCount => items.where((item) => item.needsAttention).length;
+
+  factory HardwareSection.fromMap(Map<String, dynamic> map) {
+    final items = <HardwareItem>[];
+    for (final item in asMapList(map['items'])) {
+      items.add(HardwareItem.fromMap(item));
+    }
+    return HardwareSection(asText(map['title'], 'Readings'), items);
+  }
+}
+
+/// A check the technician performs on the phone itself.
+class ManualCheck {
+  final String id;
+  final String title;
+  final String instruction;
+
+  const ManualCheck({
+    required this.id,
+    required this.title,
+    required this.instruction,
+  });
+
+  factory ManualCheck.fromMap(Map<String, dynamic> map) {
+    return ManualCheck(
+      id: asText(map['id']),
+      title: asText(map['title']),
+      instruction: asText(map['instruction']),
+    );
+  }
+}
+
+/// Everything the hardware check-up returned.
+class HardwareCheckup {
+  final List<HardwareSection> sections;
+  final List<ManualCheck> manualChecks;
+  final int totalCount;
+  final int attentionCount;
+  final String summary;
+  final String report;
+
+  const HardwareCheckup({
+    this.sections = const <HardwareSection>[],
+    this.manualChecks = const <ManualCheck>[],
+    this.totalCount = 0,
+    this.attentionCount = 0,
+    this.summary = '',
+    this.report = '',
+  });
+
+  factory HardwareCheckup.fromMap(Map<String, dynamic> map) {
+    final sections = <HardwareSection>[];
+    for (final section in asMapList(map['sections'])) {
+      sections.add(HardwareSection.fromMap(section));
+    }
+
+    final checks = <ManualCheck>[];
+    for (final check in asMapList(map['manualChecks'])) {
+      checks.add(ManualCheck.fromMap(check));
+    }
+
+    return HardwareCheckup(
+      sections: sections,
+      manualChecks: checks,
+      totalCount: asInt(map['totalCount']),
+      attentionCount: asInt(map['attentionCount']),
+      summary: asText(map['summary']),
+      report: asText(map['report']),
+    );
+  }
+}
+
 class HistoryRecord {
   final String id;
   final int timestamp;
@@ -678,6 +784,12 @@ class DeviceBridge {
       },
     );
     return asText(result, 'The report returned no text.');
+  }
+
+  /// Reads every hardware section of the connected phone.
+  Future<HardwareCheckup> runHardwareCheckup() async {
+    final result = await _channel.invokeMethod<dynamic>('runHardwareCheckup');
+    return HardwareCheckup.fromMap(asMap(result));
   }
 
   Future<SecurityAuditResult> runSecurityAudit() async {

@@ -6,8 +6,10 @@ import 'screens/command_terminal_screen.dart';
 import 'screens/connection_screen.dart';
 import 'screens/diagnostics_screen.dart';
 import 'screens/file_manager_screen.dart';
+import 'screens/hardware_check_screen.dart';
 import 'screens/repair_history_screen.dart';
 import 'screens/repair_tools_screen.dart';
+import 'screens/reset_screen.dart';
 import 'screens/security_center_screen.dart';
 import 'screens/target_apps_screen.dart';
 import 'services/device_bridge.dart';
@@ -86,6 +88,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       icon: Icons.folder_copy,
       color: Colors.amber,
       builder: (context) => const FileManagerScreen(),
+    ),
+    ToolItem(
+      title: 'Hardware Check',
+      description: 'Screen, battery, sensors, radios and hand checks.',
+      icon: Icons.memory,
+      color: Colors.cyanAccent,
+      builder: (context) => const HardwareCheckScreen(),
+    ),
+    ToolItem(
+      title: 'Reset & Wipe',
+      description: 'Guided factory reset, with the warnings.',
+      icon: Icons.restart_alt,
+      color: Colors.deepOrange,
+      builder: (context) => const ResetScreen(),
     ),
     ToolItem(
       title: 'Security Center',

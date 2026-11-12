@@ -11,8 +11,10 @@ import 'package:ultimate_debugging_tool/screens/command_terminal_screen.dart';
 import 'package:ultimate_debugging_tool/screens/connection_screen.dart';
 import 'package:ultimate_debugging_tool/screens/diagnostics_screen.dart';
 import 'package:ultimate_debugging_tool/screens/file_manager_screen.dart';
+import 'package:ultimate_debugging_tool/screens/hardware_check_screen.dart';
 import 'package:ultimate_debugging_tool/screens/repair_history_screen.dart';
 import 'package:ultimate_debugging_tool/screens/repair_tools_screen.dart';
+import 'package:ultimate_debugging_tool/screens/reset_screen.dart';
 import 'package:ultimate_debugging_tool/screens/security_center_screen.dart';
 import 'package:ultimate_debugging_tool/screens/target_apps_screen.dart';
 import 'package:ultimate_debugging_tool/services/device_bridge.dart';
@@ -167,6 +169,55 @@ Future<Object?> fakeNative(MethodCall call) async {
             'title': 'Security patch',
             'detail': 'Last security update is 2022-01-01.',
             'advice': 'Install system updates.',
+          },
+        ],
+      };
+    case 'runHardwareCheckup':
+      return <String, Object?>{
+        'totalCount': 3,
+        'attentionCount': 1,
+        'summary': '3 readings, 1 needing attention.',
+        'report': 'HARDWARE CHECK\nPhone: samsung SM-A125F',
+        'sections': <Object?>[
+          <String, Object?>{
+            'title': 'Identity',
+            'items': <Object?>[
+              <String, Object?>{
+                'name': 'Phone',
+                'value': 'samsung SM-A125F',
+                'status': 'INFO',
+                'advice': '',
+              },
+            ],
+          },
+          <String, Object?>{
+            'title': 'Battery',
+            'items': <Object?>[
+              <String, Object?>{
+                'name': 'Charge level',
+                'value': '74 %',
+                'status': 'INFO',
+                'advice': '',
+              },
+              <String, Object?>{
+                'name': 'Battery temperature',
+                'value': '45.5 \u00b0C',
+                'status': 'ATTENTION',
+                'advice': 'Warm. Keep an eye on it while charging.',
+              },
+            ],
+          },
+        ],
+        'manualChecks': <Object?>[
+          <String, Object?>{
+            'id': 'screen',
+            'title': 'Screen and pixels',
+            'instruction': 'Open a white picture, then a black one.',
+          },
+          <String, Object?>{
+            'id': 'charging',
+            'title': 'Charging port',
+            'instruction': 'Plug in the charger and watch the battery icon.',
           },
         ],
       };
@@ -594,6 +645,97 @@ void main() {
 
     expect(find.text('Restart Wi-Fi'), findsNothing);
     expect(find.text('Report: Battery'), findsOneWidget);
+
+    await finish(tester);
+  });
+
+  testWidgets('hardware check reads the phone and records a hand check',
+      (tester) async {
+    connectPhone();
+    await show(tester, const HardwareCheckScreen());
+
+    expect(called('runHardwareCheckup'), isTrue);
+    expect(find.text('3 readings, 1 needing attention.'), findsOneWidget);
+    expect(find.text('samsung SM-A125F'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('Warm. Keep an eye on it while charging.'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('1 to check'), findsWidgets);
+
+    await tester.scrollUntilVisible(
+      find.text('Screen and pixels'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Pass').first);
+    await settle(tester);
+
+    final args = argsOf('saveRepairHistory');
+    expect(args['category'], 'Hardware check');
+    expect(args['operation'], 'Hardware check: Screen and pixels');
+    expect(args['result'], 'Pass');
+    expect(args['scope'], 'target');
+    expect(find.text('PASSED'), findsOneWidget);
+
+    await finish(tester);
+  });
+
+  testWidgets('hardware check needs a phone first', (tester) async {
+    await show(tester, const HardwareCheckScreen());
+
+    expect(find.text('Connect a phone first'), findsOneWidget);
+    expect(called('runHardwareCheckup'), isFalse);
+
+    await finish(tester);
+  });
+
+  testWidgets('reset needs the owner agreement before it restarts',
+      (tester) async {
+    connectPhone();
+    await show(tester, const ResetScreen());
+
+    expect(find.text('This tool does not remove locks'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.byType(Checkbox),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.byType(Checkbox));
+    await settle(tester);
+
+    await tester.scrollUntilVisible(
+      find.text('Restart into recovery'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Restart into recovery'));
+    await settle(tester);
+
+    // Nothing happens until the warning is accepted.
+    expect(called('executeRepairCommand'), isFalse);
+    expect(find.text('Restart into recovery?'), findsOneWidget);
+
+    await tester.tap(find.text('Restart'));
+    await settle(tester);
+
+    expect(argsOf('executeRepairCommand')['operation'], 'reboot-recovery');
+    expect(argsOf('executeRepairCommand')['confirmed'], true);
+
+    await tester.scrollUntilVisible(
+      find.text('Record the reset'),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(find.text('Record the reset'));
+    await settle(tester);
+
+    expect(argsOf('saveRepairHistory')['category'], 'Reset');
+    expect(argsOf('saveRepairHistory')['operation'], 'Factory reset');
+    expect(find.text('Reset recorded'), findsOneWidget);
 
     await finish(tester);
   });

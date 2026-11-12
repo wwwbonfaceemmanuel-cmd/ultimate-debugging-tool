@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  - AdbSessionManager      the single ADB session (USB or wireless)
  *  - TargetDiagnostics      reports about the connected phone
  *  - SecurityAudit          security check-up of the connected phone
+ *  - HardwareInspector      hardware check-up of the connected phone
  *  - TerminalCommands       the read-only terminal command list
  *  - RepairServices         approved repair services
  *  - TargetApps/TargetFiles apps and files on the connected phone
@@ -288,6 +289,10 @@ class MainActivity : FlutterActivity() {
 
             "runSecurityAudit" -> async(reply, "SECURITY_AUDIT_ERROR") {
                 SecurityAudit(session).run().toMap()
+            }
+
+            "runHardwareCheckup" -> async(reply, "HARDWARE_CHECK_ERROR") {
+                HardwareInspector(session).run().toMap()
             }
 
             // ----- Terminal -----
