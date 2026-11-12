@@ -91,41 +91,73 @@ jobs:
           ./gradlew :app:testDebugUnitTest --console=plain 2>&1 | tee /tmp/logs/5-native-tests.log
 
       - name: Upload APK
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: ultimate-debugging-tool-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
 
-      # Puts the important lines of a failed step where they are easy to
-      # find: the "Annotations" box at the top of the run page.
-      - name: Summarise failures
-        if: failure()
+      # Puts the results where they are easy to find: the "Annotations"
+      # box at the top of the run page.
+      - name: Report results
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
         run: |
           python3 - <<'PY'
-          import glob, os, re
+          import glob, os, re, sys
 
-          def emit(title, text):
+          def emit(kind, title, text):
               text = text[:7000] or 'No output was captured.'
               text = text.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-              print(f'::error title={title}::{text}')
+              print(f'::{kind} title={title}::{text}')
 
-          logs = sorted(glob.glob('/tmp/logs/*.log'))
-          if logs:
-              last = logs[-1]
-              lines = open(last, errors='replace').read().splitlines()
-              pattern = re.compile(
-                  r'^e: |^\s*(error|warning) •|[Ee]rror:|FAILURE|FAILED|What went wrong|'
-                  r'Exception|\[E\]|Some tests failed|Expected:|Actual:|\.dart:\d+|\.kt:\d+'
-              )
-              keep = [l for l in lines if pattern.search(l)]
-              emit(os.path.basename(last), '\n'.join((keep or lines)[-70:]))
+          def read(path):
+              try:
+                  return open(path, errors='replace').read()
+              except OSError:
+                  return ''
 
+          failed = os.environ.get('JOB_STATUS') != 'success'
+
+          # Dart analysis: list what the analyzer found, even when it passes.
+          analysis = read('/tmp/logs/2-analyze.log').splitlines()
+          issues = [l.strip() for l in analysis if ' • ' in l]
+          if issues:
+              emit('notice', f'Dart analysis - {len(issues)} remarks', '\n'.join(issues[:60]))
+
+          # Native tests: how many ran.
+          total = failures = 0
           for path in glob.glob('android/app/build/test-results/**/*.xml', recursive=True):
-              data = open(path, errors='replace').read()
+              data = read(path)
+              head = data[:3000]
+              tests = re.search(r'<testsuite [^>]*\btests="(\d+)"', head)
+              bad = re.search(r'<testsuite [^>]*\bfailures="(\d+)"', head)
+              errors = re.search(r'<testsuite [^>]*\berrors="(\d+)"', head)
+              total += int(tests.group(1)) if tests else 0
+              failures += (int(bad.group(1)) if bad else 0) + (int(errors.group(1)) if errors else 0)
+
               for match in re.finditer(
-                  r'<testcase name="([^"]+)" classname="([^"]+)"[^>]*>\s*<failure message="([^"]*)"', data
+                  r'<testcase name="([^"]+)" classname="([^"]+)"[^>]*>\s*<(?:failure|error) message="([^"]*)"', data
               ):
                   name, cls, message = match.groups()
-                  emit('Native test failed', f'{cls.split(".")[-1]}.{name}: {message[:1500]}')
+                  emit('error', 'Native test failed', f'{cls.split(".")[-1]}.{name}: {message[:1500]}')
+
+          if total or not failed:
+              emit('notice', 'Native engine tests', f'{total} tests ran, {failures} failed.')
+
+          if failed:
+              logs = sorted(glob.glob('/tmp/logs/*.log'))
+              if logs:
+                  last = logs[-1]
+                  lines = read(last).splitlines()
+                  pattern = re.compile(
+                      r'^e: |^\s*(error|warning) •|[Ee]rror:|FAILURE|FAILED|What went wrong|'
+                      r'Exception|\[E\]|Some tests failed|Expected:|Actual:|\.dart:\d+|\.kt:\d+'
+                  )
+                  keep = [l for l in lines if pattern.search(l)]
+                  emit('error', os.path.basename(last), '\n'.join((keep or lines)[-70:]))
+
+          if not failed and total == 0:
+              sys.exit('The native engine tests did not run.')
           PY

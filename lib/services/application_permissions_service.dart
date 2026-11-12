@@ -1,6 +1,8 @@
 
 import 'package:flutter/services.dart';
 
+import 'device_bridge.dart';
+
 enum PermissionStatus {
   granted,
   denied,
@@ -68,7 +70,7 @@ class ApplicationPermission {
 
 class ApplicationPermissionsService {
   static const MethodChannel _channel =
-      MethodChannel('com.ultimate.debugging/usb');
+      MethodChannel(kMethodChannelName);
 
   Future<List<ApplicationPermission>>
       getApplicationPermissions(String packageName) async {

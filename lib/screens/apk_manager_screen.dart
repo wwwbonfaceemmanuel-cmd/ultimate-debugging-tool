@@ -561,7 +561,7 @@ class _ApkManagerScreenState extends State<ApkManagerScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF101D32),
         foregroundColor: Colors.white,
-        title: const Text('APK & Application Manager'),
+        title: const Text('Apps on This Phone'),
         actions: [
           IconButton(
             onPressed: _loading ? null : _loadApplications,
