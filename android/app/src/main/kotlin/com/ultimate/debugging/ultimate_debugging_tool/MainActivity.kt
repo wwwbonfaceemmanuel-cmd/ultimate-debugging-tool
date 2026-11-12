@@ -98,6 +98,10 @@ class MainActivity : FlutterActivity() {
         Thread(task, "UDT-Worker").apply { isDaemon = true }
     }
 
+    /** The phone in bootloader mode, when one is connected. */
+    @Volatile
+    private var fastboot: FastbootSession? = null
+
     @Volatile
     private var eventSink: EventChannel.EventSink? = null
 
@@ -265,6 +269,39 @@ class MainActivity : FlutterActivity() {
                     session.disconnect()
                 }
                 true
+            }
+
+            // ----- Bootloader (fastboot) -----
+
+            "getFastbootDevices" -> reply.success(fastbootDevices())
+
+            "connectFastboot" -> {
+                val deviceName = requireText(
+                    call,
+                    "deviceName",
+                    "USB device name is required."
+                )
+
+                async(reply, "FASTBOOT_ERROR") { connectFastboot(deviceName) }
+            }
+
+            "disconnectFastboot" -> {
+                fastboot?.close()
+                fastboot = null
+                true
+            }
+
+            "getFastbootInfo" -> async(reply, "FASTBOOT_ERROR") {
+                requireFastboot().deviceInfo().toMap()
+            }
+
+            "rebootFastboot" -> {
+                val target = call.argument<String>("target").orEmpty()
+
+                async(reply, "FASTBOOT_ERROR") {
+                    requireFastboot().reboot(target)
+                    true
+                }
             }
 
             // ----- Diagnostics -----
@@ -505,6 +542,94 @@ class MainActivity : FlutterActivity() {
 
         override fun notImplemented() =
             reply.error("NOT_IMPLEMENTED", "The operation is not available.")
+    }
+
+    // ------------------------------------------------------------------
+    // Bootloader
+    // ------------------------------------------------------------------
+
+    /** USB devices that are sitting in their bootloader. */
+    private fun fastbootDevices(): List<Map<String, Any?>> {
+        val found = ArrayList<Map<String, Any?>>()
+
+        for (device in usbManager.deviceList.values) {
+            val face = (0 until device.interfaceCount)
+                .map { device.getInterface(it) }
+                .firstOrNull {
+                    it.interfaceClass == FastbootUsbTransport.FASTBOOT_CLASS &&
+                        it.interfaceSubclass == FastbootUsbTransport.FASTBOOT_SUBCLASS &&
+                        it.interfaceProtocol == FastbootUsbTransport.FASTBOOT_PROTOCOL
+                } ?: continue
+
+            found.add(
+                linkedMapOf(
+                    "deviceName" to device.deviceName,
+                    "deviceId" to device.deviceId,
+                    "vendorId" to device.vendorId,
+                    "productId" to device.productId,
+                    "manufacturerName" to device.manufacturerName.orEmpty(),
+                    "productName" to device.productName.orEmpty(),
+                    "interfaceId" to face.id,
+                    "hasPermission" to usbManager.hasPermission(device)
+                )
+            )
+        }
+
+        return found
+    }
+
+    private fun requireFastboot(): FastbootSession {
+        return fastboot ?: throw RequestError(
+            "FASTBOOT_NOT_CONNECTED",
+            "Connect a phone in bootloader mode first."
+        )
+    }
+
+    private fun connectFastboot(deviceName: String): Map<String, Any?> {
+        val device = usbManager.deviceList[deviceName]
+            ?: throw RequestError("DEVICE_NOT_FOUND", "USB device is no longer connected.")
+
+        if (!usbManager.hasPermission(device)) {
+            throw RequestError(
+                "USB_PERMISSION_REQUIRED",
+                "Allow USB access for this device first."
+            )
+        }
+
+        val interfaceId = (0 until device.interfaceCount)
+            .map { device.getInterface(it) }
+            .firstOrNull {
+                it.interfaceClass == FastbootUsbTransport.FASTBOOT_CLASS &&
+                    it.interfaceSubclass == FastbootUsbTransport.FASTBOOT_SUBCLASS &&
+                    it.interfaceProtocol == FastbootUsbTransport.FASTBOOT_PROTOCOL
+            }
+            ?.id
+            ?: throw RequestError(
+                "FASTBOOT_INTERFACE_NOT_FOUND",
+                "This phone is not in bootloader mode. Restart it into the bootloader first."
+            )
+
+        fastboot?.close()
+        fastboot = null
+
+        val transport = FastbootUsbTransport(usbManager, device, interfaceId)
+
+        try {
+            transport.open()
+        } catch (e: IOException) {
+            throw RequestError("FASTBOOT_ERROR", e.message ?: "The bootloader could not be opened.")
+        }
+
+        val session = FastbootSession(transport)
+
+        try {
+            val info = session.deviceInfo()
+            fastboot = session
+            return info.toMap()
+        } catch (e: Exception) {
+            session.close()
+            throw e
+        }
     }
 
     // ------------------------------------------------------------------
@@ -984,6 +1109,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         activityDestroyed = true
+        fastboot?.close()
+        fastboot = null
 
         if (receiverRegistered) {
             try {
