@@ -372,7 +372,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
 
   Widget _buildBody(AdbStatus status) {
     if (!status.connected) {
-      return Padding(
+      return SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: NeedsPhone(
           what: 'The file manager',
@@ -386,7 +386,7 @@ class _FileManagerScreenState extends State<FileManagerScreen> {
     }
 
     if (_error.isNotEmpty) {
-      return Padding(
+      return SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Notice(
           icon: Icons.error_outline,

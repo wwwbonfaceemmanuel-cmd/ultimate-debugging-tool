@@ -214,7 +214,7 @@ class _TargetAppsScreenState extends State<TargetAppsScreen> {
                   child: _loading && !_loadedOnce
                       ? const Center(child: CircularProgressIndicator())
                       : _error.isNotEmpty
-                          ? Padding(
+                          ? SingleChildScrollView(
                               padding: const EdgeInsets.all(16),
                               child: Notice(
                                 icon: Icons.error_outline,
@@ -590,7 +590,7 @@ class _TargetAppDetailsScreenState extends State<TargetAppDetailsScreen> {
         valueListenable: _bridge.status,
         builder: (context, status, _) {
           if (_removed) {
-            return Padding(
+            return SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Notice(
                 icon: Icons.check_circle,

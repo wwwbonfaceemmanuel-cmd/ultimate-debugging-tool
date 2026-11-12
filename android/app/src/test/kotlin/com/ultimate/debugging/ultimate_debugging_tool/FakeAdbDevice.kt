@@ -43,6 +43,9 @@ class FakeAdbDevice(
     @Volatile var promptsShown = 0
     @Volatile var chunkSize = 4096
 
+    /** The identity text the workstation sent when it connected. */
+    @Volatile var hostBanner = ByteArray(0)
+
     val trustedKeys = ConcurrentHashMap.newKeySet<BigInteger>()
     val openedServices = LinkedBlockingQueue<String>()
 
@@ -129,7 +132,10 @@ class FakeAdbDevice(
             val packet = AdbProtocol.decode(bytes)
 
             when (packet.command) {
-                AdbProtocol.CMD_CNXN -> challenge()
+                AdbProtocol.CMD_CNXN -> {
+                    hostBanner = packet.data
+                    challenge()
+                }
 
                 AdbProtocol.CMD_AUTH -> when (packet.arg0) {
                     AdbProtocol.AUTH_SIGNATURE -> {

@@ -219,6 +219,7 @@ class Notice extends StatelessWidget {
     return Panel(
       borderColor: color.withAlpha(120),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -228,6 +229,7 @@ class Notice extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
@@ -328,6 +330,7 @@ class TargetBanner extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(

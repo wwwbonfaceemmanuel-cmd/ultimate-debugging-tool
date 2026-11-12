@@ -153,7 +153,7 @@ class _PackagePickerState extends State<_PackagePicker> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _error.isNotEmpty
-                      ? Padding(
+                      ? SingleChildScrollView(
                           padding: const EdgeInsets.all(16),
                           child: Notice(
                             icon: Icons.error_outline,

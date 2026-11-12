@@ -497,9 +497,10 @@ class LocalDeviceReports(private val activity: Activity) {
                         else -> "Unknown or unavailable"
                     }
 
+                    // Tenths of a degree; can be below zero in the cold.
                     val temperature = batteryIntent.getIntExtra(
                         BatteryManager.EXTRA_TEMPERATURE,
-                        -1
+                        Int.MIN_VALUE
                     )
 
                     val voltage = batteryIntent.getIntExtra(
@@ -550,10 +551,10 @@ class LocalDeviceReports(private val activity: Activity) {
                     }
 
                     val temperatureC =
-                        if (temperature >= 0) {
+                        if (temperature != Int.MIN_VALUE) {
                             temperature / 10.0
                         } else {
-                            -1.0
+                            Double.NaN
                         }
 
                     val voltageV =
@@ -635,7 +636,7 @@ class LocalDeviceReports(private val activity: Activity) {
 
                     [THERMAL READINGS]
                     Battery Temperature: ${
-                        if (temperatureC >= 0) "%.1f °C".format(temperatureC)
+                        if (!temperatureC.isNaN()) "%.1f °C".format(temperatureC)
                         else "Unavailable"
                     }
 

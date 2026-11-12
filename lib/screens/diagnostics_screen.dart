@@ -120,6 +120,62 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
     });
   }
 
+  /// Chooses which phone the reports describe.
+  Widget _buildScopeButton({
+    required String label,
+    required IconData icon,
+    required bool value,
+  }) {
+    final selected = _onTarget == value;
+
+    return Material(
+      color: selected ? AppColors.info.withAlpha(40) : AppColors.surface,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _running.isNotEmpty || selected
+            ? null
+            : () {
+                setState(() {
+                  _onTarget = value;
+                  _resultText = '';
+                });
+              },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? AppColors.info : AppColors.border,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: selected ? AppColors.info : Colors.white60,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected ? Colors.white : Colors.white70,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildReportTile(NamedItem report) {
     final running = _running == report.name;
 
@@ -212,31 +268,24 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
-              SizedBox(
-                width: double.infinity,
-                child: SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment<bool>(
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildScopeButton(
+                      label: 'Connected phone',
+                      icon: Icons.phonelink,
                       value: true,
-                      icon: Icon(Icons.phonelink),
-                      label: Text('Connected phone'),
                     ),
-                    ButtonSegment<bool>(
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildScopeButton(
+                      label: 'This phone',
+                      icon: Icons.smartphone,
                       value: false,
-                      icon: Icon(Icons.smartphone),
-                      label: Text('This phone'),
                     ),
-                  ],
-                  selected: <bool>{_onTarget},
-                  onSelectionChanged: _running.isNotEmpty
-                      ? null
-                      : (selection) {
-                          setState(() {
-                            _onTarget = selection.first;
-                            _resultText = '';
-                          });
-                        },
-                ),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               if (_onTarget)

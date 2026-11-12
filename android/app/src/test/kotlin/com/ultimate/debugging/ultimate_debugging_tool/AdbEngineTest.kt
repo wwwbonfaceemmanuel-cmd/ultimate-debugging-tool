@@ -74,6 +74,26 @@ class AdbEngineTest {
     }
 
     @Test
+    fun announcesOnlyFeaturesThatAreImplemented() {
+        val device = FakeAdbDevice()
+        val session = connected(device)
+
+        val banner = device.hostBanner
+        assertEquals("old phones need a closing NUL", 0.toByte(), banner.last())
+
+        // Read the way a current phone does: split by ':' then ';' then '='.
+        val text = String(banner, Charsets.UTF_8)
+        val properties = text.split(':')[2].split(';')
+        val features = properties.first { it.startsWith("features=") }
+            .removePrefix("features=").split(',')
+
+        assertEquals("host", text.split(':')[0])
+        assertEquals(listOf("shell_v2"), features)
+
+        session.shutdown()
+    }
+
+    @Test
     fun firstConnectionShowsPromptThenConnects() {
         val device = FakeAdbDevice().apply { promptDelayMs = 200 }
         val session = newSession()

@@ -30,9 +30,12 @@ class AdbConnection(
         private const val MAX_AUTH_CHALLENGES = 8
         private const val DEFAULT_OPEN_TIMEOUT_MS = 10000L
 
-        private const val HOST_BANNER =
-            "host::features=shell_v2,cmd,stat_v2,ls_v2,fixed_push_mkdir," +
-                "apex,abb,abb_exec,remount_shell,track_app,sendrecv_v2\u0000"
+        /**
+         * Only features this engine really implements are announced.
+         * The ";" keeps the closing NUL (needed by very old phones) out
+         * of the feature name on new ones.
+         */
+        private const val HOST_BANNER = "host::features=shell_v2;\u0000"
     }
 
     enum class State {
