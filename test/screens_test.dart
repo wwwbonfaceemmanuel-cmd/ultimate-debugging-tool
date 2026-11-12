@@ -516,7 +516,8 @@ void main() {
   });
 
   testWidgets('dashboard follows the live connection', (tester) async {
-    await show(tester, const DashboardScreen());
+    // Tall, so every group heading is built and can be found.
+    await showTall(tester, const DashboardScreen());
 
     expect(find.text('No phone connected'), findsOneWidget);
     expect(find.text('Connect a phone'), findsOneWidget);
