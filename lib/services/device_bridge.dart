@@ -814,9 +814,14 @@ class DeviceBridge {
   final StreamController<UsbEvent> _usbEvents =
       StreamController<UsbEvent>.broadcast();
 
+  final StreamController<int> _sideloadProgress = StreamController<int>.broadcast();
+
   StreamSubscription<dynamic>? _subscription;
 
   Stream<UsbEvent> get usbEvents => _usbEvents.stream;
+
+  /// How far an update package has gone, from 0 to 100.
+  Stream<int> get sideloadProgress => _sideloadProgress.stream;
 
   /// Starts listening for native events. Safe to call more than once.
   void start() {
@@ -838,6 +843,11 @@ class DeviceBridge {
 
     if (event == 'adb_state') {
       status.value = AdbStatus.fromMap(map['adb']);
+      return;
+    }
+
+    if (event == 'sideload') {
+      _sideloadProgress.add(asInt(map['percent']));
       return;
     }
 
@@ -963,6 +973,26 @@ class DeviceBridge {
       },
     );
     return asText(result, 'The report returned no text.');
+  }
+
+  // ----- Update from ADB (sideload) -----
+
+  /// Asks for an OTA package and copies it into the app, with its hash.
+  Future<Map<String, dynamic>> pickUpdatePackage() async {
+    final result = await _channel.invokeMethod<dynamic>('pickUpdatePackage');
+    return asMap(result);
+  }
+
+  /// Sends a checked package to the phone in recovery.
+  Future<Map<String, dynamic>> sideloadUpdatePackage({
+    required String path,
+    required String sha256,
+  }) async {
+    final result = await _channel.invokeMethod<dynamic>(
+      'sideloadUpdatePackage',
+      <String, dynamic>{'path': path, 'sha256': sha256},
+    );
+    return asMap(result);
   }
 
   // ----- Bootloader (fastboot) -----

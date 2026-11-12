@@ -39,6 +39,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  - RepairServices         approved repair services
  *  - AppDiagnosis           why one app on the connected phone misbehaves
  *  - TargetApps/TargetFiles apps and files on the connected phone
+ *  - AdbSideload            an update package for a phone in recovery
  *  - LocalDeviceReports     reports about this phone
  *
  * Nothing slow runs on the main thread.
@@ -56,6 +57,7 @@ class MainActivity : FlutterActivity() {
 
         private const val REQUEST_PICK_FILE = 4201
         private const val REQUEST_PICK_IMAGE = 4202
+        private const val REQUEST_PICK_UPDATE = 4203
         private const val WIRELESS_PORT = 5555
         private const val MAX_TRANSFER_AGE_MS = 24L * 60 * 60 * 1000
     }
@@ -116,6 +118,9 @@ class MainActivity : FlutterActivity() {
 
     // Main thread only.
     private var pendingImage: Reply? = null
+
+    // Main thread only.
+    private var pendingUpdate: Reply? = null
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -305,6 +310,17 @@ class MainActivity : FlutterActivity() {
                 async(reply, "FASTBOOT_FLASH_ERROR") {
                     flashFastbootImage(partition, path, sha256)
                 }
+            }
+
+            // ----- Update from ADB (sideload) -----
+
+            "pickUpdatePackage" -> pickUpdatePackage(reply)
+
+            "sideloadUpdatePackage" -> {
+                val path = requireText(call, "path", "Choose an update package first.")
+                val sha256 = requireText(call, "sha256", "The package checksum is required.")
+
+                async(reply, "SIDELOAD_ERROR") { sideloadUpdatePackage(path, sha256) }
             }
 
             "getFastbootInfo" -> async(reply, "FASTBOOT_ERROR") {
@@ -614,6 +630,119 @@ class MainActivity : FlutterActivity() {
                 "No file chooser is available on this phone."
             )
         }
+    }
+
+    private fun pickUpdatePackage(reply: Reply) {
+        pendingUpdate?.error("FILE_PICK_REPLACED", "Another package was requested.")
+        pendingUpdate = reply
+
+        try {
+            @Suppress("DEPRECATION")
+            startActivityForResult(
+                Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                },
+                REQUEST_PICK_UPDATE
+            )
+        } catch (e: Exception) {
+            pendingUpdate = null
+            throw RequestError(
+                "FILE_PICK_ERROR",
+                "No file chooser is available on this phone."
+            )
+        }
+    }
+
+    /** Copies the chosen update package in, hashes it, and reports it. */
+    private fun handlePickedUpdate(resultCode: Int, data: Intent?) {
+        val reply = pendingUpdate ?: return
+        pendingUpdate = null
+
+        val uri: Uri? = data?.data
+
+        if (resultCode != RESULT_OK || uri == null) {
+            reply.success(mapOf("cancelled" to true))
+            return
+        }
+
+        async(reply, "UPDATE_PACKAGE_ERROR") {
+            val directory = File(filesDir, "updates").apply { mkdirs() }
+            removeOldFiles(directory)
+
+            val name = displayName(uri)
+            val safeName = name.replace('/', '_').replace('\\', '_')
+            val target = File(directory, "${System.currentTimeMillis()}-$safeName")
+
+            val input = contentResolver.openInputStream(uri)
+                ?: throw IOException("The chosen package could not be opened.")
+
+            input.use { source ->
+                target.outputStream().use { sink -> source.copyTo(sink) }
+            }
+
+            val head = AdbSideload.headOf(target)
+
+            mapOf(
+                "cancelled" to false,
+                "path" to target.absolutePath,
+                "fileName" to name,
+                "sizeBytes" to target.length(),
+                "sha256" to sha256Of(target),
+                "looksLikePackage" to AdbSideload.looksLikePackage(head)
+            )
+        }
+    }
+
+    /**
+     * Sends an update package to the phone in recovery.
+     *
+     * Progress is sent to the app as `sideload` events, because a large
+     * package takes minutes.
+     */
+    private fun sideloadUpdatePackage(path: String, sha256: String): Map<String, Any?> {
+        val directory = File(filesDir, "updates").canonicalFile
+        val file = File(path).canonicalFile
+
+        if (!file.path.startsWith(directory.path + File.separator)) {
+            throw RequestError(
+                "INVALID_PACKAGE",
+                "Choose the update package with this tool first."
+            )
+        }
+
+        if (!file.isFile) {
+            throw RequestError(
+                "INVALID_PACKAGE",
+                "The update package is gone. Choose it again."
+            )
+        }
+
+        val actual = sha256Of(file)
+
+        if (!actual.equals(sha256, ignoreCase = true)) {
+            throw RequestError(
+                "PACKAGE_CHANGED",
+                "The package changed since it was checked. Choose it again."
+            )
+        }
+
+        if (!session.snapshot().connected) {
+            throw RequestError(
+                "ADB_NOT_CONNECTED",
+                "Connect the phone in recovery first."
+            )
+        }
+
+        val result = AdbSideload(session).send(file) { percent ->
+            sendEvent { mapOf("event" to "sideload", "percent" to percent) }
+        }
+
+        return result.toMap() + mapOf(
+            "sha256" to actual,
+            "fileName" to file.name,
+            "packageBytes" to file.length()
+        )
     }
 
     /** Copies the chosen image into the app, hashes it, and reports it. */
@@ -1153,6 +1282,11 @@ class MainActivity : FlutterActivity() {
             return
         }
 
+        if (requestCode == REQUEST_PICK_UPDATE) {
+            handlePickedUpdate(resultCode, data)
+            return
+        }
+
         if (requestCode != REQUEST_PICK_FILE) return
 
         val (reply, directory) = pendingPush ?: return
@@ -1276,6 +1410,7 @@ class MainActivity : FlutterActivity() {
         eventSink = null
         pendingPush = null
         pendingImage = null
+        pendingUpdate = null
 
         super.onDestroy()
     }
