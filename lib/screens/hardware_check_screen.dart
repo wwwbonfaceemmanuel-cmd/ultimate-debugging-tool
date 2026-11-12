@@ -142,15 +142,20 @@ class _HardwareCheckScreenState extends State<HardwareCheckScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
+          // A Wrap, not a Row: on a narrow phone the two buttons do not
+          // fit side by side and must fall onto a second line.
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               FilledButton.tonalIcon(
+                key: const Key('hardware-read'),
                 onPressed: _running ? null : _run,
                 icon: const Icon(Icons.refresh, size: 18),
                 label: Text(checkup == null ? 'Read the phone' : 'Read again'),
               ),
-              const SizedBox(width: 8),
               TextButton.icon(
+                key: const Key('hardware-copy'),
                 onPressed: checkup == null ? null : _copyReport,
                 icon: const Icon(Icons.copy, size: 18),
                 label: const Text('Copy report'),
@@ -284,14 +289,15 @@ class _HardwareCheckScreenState extends State<HardwareCheckScreen> {
               ),
             ),
             const SizedBox(height: 10),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 OutlinedButton(
                   key: Key('hardware-pass-${check.id}'),
                   onPressed: () => _record(check, 'Pass'),
                   child: const Text('Pass'),
                 ),
-                const SizedBox(width: 8),
                 OutlinedButton(
                   key: Key('hardware-fail-${check.id}'),
                   onPressed: () => _record(check, 'Fail'),

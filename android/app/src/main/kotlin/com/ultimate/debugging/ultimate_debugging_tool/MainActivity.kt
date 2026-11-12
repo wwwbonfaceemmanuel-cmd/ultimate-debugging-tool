@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  - HardwareInspector      hardware check-up of the connected phone
  *  - TerminalCommands       the read-only terminal command list
  *  - RepairServices         approved repair services
+ *  - AppDiagnosis           why one app on the connected phone misbehaves
  *  - TargetApps/TargetFiles apps and files on the connected phone
  *  - LocalDeviceReports     reports about this phone
  *
@@ -340,6 +341,14 @@ class MainActivity : FlutterActivity() {
                     val root = File(filesDir, "apk_exports")
                     removeOldFiles(root)
                     TargetApps(session).backupApk(packageName, root)
+                }
+            }
+
+            "getAppDiagnosis" -> {
+                val packageName = requireText(call, "packageName", "A package name is required.")
+
+                async(reply, "APP_DIAGNOSIS_ERROR") {
+                    AppDiagnosis(session).inspect(packageName).toMap()
                 }
             }
 

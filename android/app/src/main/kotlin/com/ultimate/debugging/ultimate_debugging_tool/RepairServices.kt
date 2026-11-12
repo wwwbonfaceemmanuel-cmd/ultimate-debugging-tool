@@ -115,6 +115,27 @@ class RepairServices(private val runner: AdbShellRunner) {
                 "Brings back a built-in app that was removed for this user.", minSdk = 24
             ),
             Service(
+                "clear-app-cache", "Clear an app's cache", APPS, Risk.LOW, true, true,
+                "Deletes only the temporary cache of one app. Accounts, settings and files are kept.",
+                "The app rebuilds its cache as it is used again."
+            ),
+            Service(
+                "uninstall-app-updates", "Remove updates from a built-in app", APPS, Risk.MEDIUM, true, true,
+                "Returns a built-in app to the version that came with the phone. Fixes built-in apps broken by an update.",
+                "The app's data is kept, but it returns to its original version until the store updates it again.",
+                minSdk = 29
+            ),
+            Service(
+                "recompile-app", "Rebuild an app's code", APPS, Risk.LOW, true, true,
+                "Recompiles one app for this phone. Fixes apps that became slow or started crashing after an update.",
+                "The phone may be busy for a minute while it recompiles."
+            ),
+            Service(
+                "reset-app-settings", "Reset one app's settings", APPS, Risk.LOW, true, true,
+                "Returns one app's permissions and background restrictions to their defaults. Its data is kept.",
+                "The owner may be asked to allow permissions again."
+            ),
+            Service(
                 "reset-app-permissions", "Reset all app permissions", APPS, Risk.MEDIUM, false, true,
                 "Returns every app's permissions to their defaults. Apps will ask again when needed.",
                 "Affects all apps. The owner will need to allow permissions again.", minSdk = 23
@@ -511,6 +532,74 @@ class RepairServices(private val runner: AdbShellRunner) {
                     } else {
                         "Checked: the app is no longer installed."
                     }
+                )
+            }
+
+            "clear-app-cache" -> {
+                val result = shell("pm clear --cache-only --user 0 $quoted", 60000L)
+
+                if (!result.combined.contains("Success")) {
+                    throw RepairException(
+                        "REPAIR_EXECUTION_ERROR",
+                        failureText(result, "The phone refused to clear the app's cache.")
+                    )
+                }
+
+                Outcome(
+                    service, target,
+                    "The app's cache was cleared.",
+                    "The phone reported Success. Accounts, settings and files were kept."
+                )
+            }
+
+            "uninstall-app-updates" -> {
+                val result = shell("pm uninstall-system-updates $quoted", 120000L)
+
+                if (!result.succeeded || result.combined.contains("Error")) {
+                    throw RepairException(
+                        "REPAIR_EXECUTION_ERROR",
+                        failureText(
+                            result,
+                            "The phone refused to remove the updates. Only built-in apps have updates to remove."
+                        )
+                    )
+                }
+
+                Outcome(
+                    service, target,
+                    "The updates were removed from the built-in app.",
+                    "The app is back to the version that came with the phone. The store may update it again."
+                )
+            }
+
+            "recompile-app" -> {
+                val result = shell("cmd package compile -m speed -f $quoted", 180000L)
+
+                if (!result.succeeded) {
+                    throw RepairException(
+                        "REPAIR_EXECUTION_ERROR",
+                        failureText(result, "The phone refused to recompile the app.")
+                    )
+                }
+
+                Outcome(
+                    service, target,
+                    "The app was recompiled.",
+                    "The phone answered: " +
+                        result.combined.trim().ifEmpty { "Success" }.take(200)
+                )
+            }
+
+            "reset-app-settings" -> {
+                requireSuccess(
+                    shell("cmd appops reset $quoted", 60000L),
+                    "The phone refused to reset the app's settings."
+                )
+
+                Outcome(
+                    service, target,
+                    "The app's settings and background restrictions were reset.",
+                    "Checked: the phone accepted the reset. The app's data was not touched."
                 )
             }
 

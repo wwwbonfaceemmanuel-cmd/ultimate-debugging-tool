@@ -170,6 +170,17 @@ jobs:
                   )
                   keep = [l for l in lines if vital.search(l)]
 
+                  # The lines after an exception name the widget or file
+                  # that caused it, so keep them too.
+                  detail = []
+                  for index, line in enumerate(lines):
+                      if 'EXCEPTION CAUGHT' in line or 'overflowed' in line:
+                          detail = lines[index:index + 16]
+                          break
+
+                  if detail:
+                      keep = keep[:20] + [''] + detail
+
                   if not keep:
                       pattern = re.compile(
                           r'[Ee]rror:|FAILURE|FAILED|Exception|\.dart:\d+|\.kt:\d+'
