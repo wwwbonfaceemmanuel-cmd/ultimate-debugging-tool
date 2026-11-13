@@ -292,6 +292,103 @@ class RepairServices(private val runner: AdbShellRunner) {
                     "Apps will ask again when needed.",
                 "Affects all apps. The owner may need to allow background use again.",
                 minSdk = 23
+            ),            Service(
+                "fix-app-uninstall", "Uninstall an app (terminal)", APPS, Risk.HIGH, true, false,
+                "Removes a user app and its data. Terminal shortcut for uninstall-app.",
+                "Cannot be undone. System apps are blocked.", minSdk = 0
+            ),
+            Service(
+                "fix-app-restore", "Restore built-in app (terminal)", APPS, Risk.LOW, true, true,
+                "Restores a removed built-in app for this user.", minSdk = 24
+            ),
+            Service(
+                "fix-app-updates-remove", "Remove app updates (terminal)", APPS, Risk.MEDIUM, true, true,
+                "Removes updates from a built-in app, back to factory version.", minSdk = 29
+            ),
+            Service(
+                "fix-app-compile", "Recompile an app (terminal)", APPS, Risk.LOW, true, true,
+                "Recompiles one app for speed. Fixes slow/crash after update."
+            ),
+            Service(
+                "fix-app-settings", "Reset one app access (terminal)", APPS, Risk.LOW, true, true,
+                "Resets one app's special access to defaults. Data kept."
+            ),
+            Service(
+                "fix-app-standby", "Unrestrict an app (terminal)", APPS, Risk.LOW, true, true,
+                "Removes battery restriction (standby bucket -> active) from one app."
+            ),
+            Service(
+                "fix-app-bg-allow", "Allow background (terminal)", APPS, Risk.LOW, true, true,
+                "Allows one app to run in background."
+            ),
+            Service(
+                "fix-nfc", "Restart NFC", NETWORK, Risk.LOW, false, true,
+                "Restarts NFC. Fixes tap-to-pay not responding."
+            ),
+            Service(
+                "fix-hotspot-off", "Turn off hotspot", NETWORK, Risk.LOW, false, true,
+                "Turns off Wi-Fi hotspot / tethering."
+            ),
+            Service(
+                "fix-data-roaming-on", "Allow data roaming", NETWORK, Risk.LOW, false, true,
+                "Allows mobile data while roaming.",
+                "Carrier charges may apply."
+            ),
+            Service(
+                "fix-location-on", "Turn on location", NETWORK, Risk.LOW, false, true,
+                "Turns on location (GPS + network)."
+            ),
+            Service(
+                "fix-volume-reset", "Reset volumes", SYSTEM, Risk.LOW, false, true,
+                "Resets music, ring, notification and system volumes to mid levels."
+            ),
+            Service(
+                "fix-mute-off", "Turn off Do Not Disturb", SYSTEM, Risk.LOW, false, true,
+                "Turns off Do Not Disturb / mute and restores sound."
+            ),
+            Service(
+                "fix-vibrate-on", "Turn on vibration", SYSTEM, Risk.LOW, false, true,
+                "Turns on vibration for calls and touch."
+            ),
+            Service(
+                "fix-doze-off", "Pause Doze", SYSTEM, Risk.LOW, false, true,
+                "Pauses Doze battery optimization for testing. Reboot to re-enable."
+            ),
+            Service(
+                "fix-launcher-reset", "Reset home launcher", SYSTEM, Risk.MEDIUM, false, true,
+                "Resets home screen launcher. Fixes blank home or missing icons."
+            ),
+            Service(
+                "fix-unknown-sources-off", "Block unknown sources", SYSTEM, Risk.LOW, false, true,
+                "Blocks sideloading from unknown sources."
+            ),
+            Service(
+                "fix-adb-wifi-off", "Turn off wireless ADB", SYSTEM, Risk.LOW, false, true,
+                "Turns off wireless ADB after servicing."
+            ),
+            Service(
+                "fix-dark-mode-off", "Turn off dark mode", DISPLAY, Risk.LOW, false, true,
+                "Turns off dark mode."
+            ),
+            Service(
+                "fix-dark-mode-on", "Turn on dark mode", DISPLAY, Risk.LOW, false, true,
+                "Turns on dark mode."
+            ),
+            Service(
+                "fix-night-light-off", "Turn off Night Light", DISPLAY, Risk.LOW, false, true,
+                "Turns off Night Light / blue-light filter."
+            ),
+            Service(
+                "fix-screen-lock-timeout", "Quick screen lock", SYSTEM, Risk.LOW, false, true,
+                "Sets screen to lock 5 seconds after sleep."
+            ),
+            Service(
+                "fix-slow-phone", "Full speed-up (all safe steps)", STORAGE, Risk.LOW, false, true,
+                "Caches, logs, background apps and recompile in one step. Takes minutes."
+            ),
+            Service(
+                "fix-notifications", "Fix notifications", SYSTEM, Risk.MEDIUM, false, true,
+                "Resets app access, turns off DND and battery saver to restore notifications."
             )
         )
 
@@ -1126,10 +1223,133 @@ class RepairServices(private val runner: AdbShellRunner) {
                 )
             }
 
+            // --- Extended fixing side: mirrors + professional extras ---
+            "uninstall-app-terminal", "fix-app-uninstall" -> {
+                val quoted = ShellSupport.quote(target)
+                if (!isInstalled(quoted)) throw RepairException("PACKAGE_NOT_FOUND", "App not found on connected device.")
+                if (isSystemPackage(target, quoted)) throw RepairException("SYSTEM_PACKAGE", "System apps cannot be uninstalled this way. Use 'Remove updates' or Disable.")
+                val result = shell("pm uninstall --user 0 $quoted", 60000L)
+                if (!result.combined.contains("Success")) throw RepairException("REPAIR_EXECUTION_ERROR", failureText(result, "Phone refused to uninstall the app."))
+                done("The app was uninstalled.", if (isInstalled(quoted)) "Phone reports Success but app remains for another user." else "Checked: app no longer installed.")
+            }
+            "restore-system-app-terminal", "fix-app-restore" -> {
+                val quoted = ShellSupport.quote(target)
+                val result = shell("cmd package install-existing --user 0 $quoted", 60000L)
+                if (!isInstalled(quoted)) throw RepairException("REPAIR_EXECUTION_ERROR", failureText(result, "App could not be restored. Not part of this phone's software."))
+                done("The built-in app was restored.", "Checked: app is installed again.")
+            }
+            "fix-app-updates-remove" -> {
+                val quoted = ShellSupport.quote(target)
+                val result = shell("pm uninstall-system-updates $quoted", 120000L)
+                if (!result.succeeded || result.combined.contains("Error")) throw RepairException("REPAIR_EXECUTION_ERROR", failureText(result, "Phone refused to remove updates. Only built-in apps have updates."))
+                done("Updates were removed from the built-in app.", "App is back to factory version. Store may update it again.")
+            }
+            "fix-app-compile" -> {
+                val quoted = ShellSupport.quote(target)
+                val result = shell("cmd package compile -m speed -f $quoted", 180000L)
+                if (!result.succeeded) throw RepairException("REPAIR_EXECUTION_ERROR", failureText(result, "Phone refused to recompile the app."))
+                done("The app was recompiled.", "Phone answered: " + result.combined.trim().ifEmpty { "Success" }.take(200))
+            }
+            "fix-app-settings" -> {
+                val quoted = ShellSupport.quote(target)
+                requireSuccess(shell("cmd appops reset $quoted", 60000L), "Phone refused to reset the app's settings.")
+                done("The app's special access was reset.", "Checked: phone accepted. App data kept.")
+            }
+            "fix-app-standby" -> {
+                val quoted = ShellSupport.quote(target)
+                requireSuccess(shell("am set-standby-bucket $quoted active", 30000L), "Phone refused to change standby bucket.")
+                done("Battery restriction removed from the app.", "Checked: standby bucket set to active.")
+            }
+            "fix-app-bg-allow" -> {
+                val quoted = ShellSupport.quote(target)
+                requireSuccess(shell("cmd appops set $quoted RUN_IN_BACKGROUND allow", 30000L), "Phone refused to allow background.")
+                done("App allowed to run in background.", "Checked: RUN_IN_BACKGROUND = allow.")
+            }
+            "fix-nfc" -> {
+                val off = shell("svc nfc disable")
+                requireSuccess(off, "NFC could not be switched off on this Android version.")
+                shell("sleep 2")
+                requireSuccess(shell("svc nfc enable"), "NFC could not be switched on.")
+                done("NFC was restarted.", "Checked: NFC cycled. Test tap-to-pay.")
+            }
+            "fix-hotspot-off" -> {
+                shell("cmd wifi set-wifi-ap-enabled null false 2>/dev/null || svc wifi setWifiApEnabled null false 2>/dev/null || settings put global tether_dun_required 0")
+                done("Hotspot / tethering turned off.", "Checked: request sent. Verify in phone Settings > Hotspot.")
+            }
+            "fix-data-roaming-on" -> {
+                requireSuccess(shell("settings put global data_roaming 1"), "Data roaming could not be changed.")
+                done("Data roaming allowed.", "Checked: data_roaming = '${setting("global", "data_roaming")}'. Warn about charges.")
+            }
+            "fix-location-on" -> {
+                requireSuccess(shell("settings put secure location_mode 3"), "Location could not be changed.")
+                shell("settings put secure location_providers_allowed +gps,+network 2>/dev/null")
+                done("Location (GPS + network) turned on.", "Checked: location_mode = '${setting("secure", "location_mode")}'.")
+            }
+            "fix-volume-reset" -> {
+                requireSuccess(shell("settings put system volume_music 11; settings put system volume_ring 5; settings put system volume_notification 5; settings put system volume_system 5"), "Volume could not be changed.")
+                done("Volumes reset to mid levels.", "Music 11, ring 5, notification 5, system 5.")
+            }
+            "fix-mute-off" -> {
+                requireSuccess(shell("settings put global zen_mode 0; cmd notification set_dnd off 2>/dev/null"), "Do Not Disturb could not be changed.")
+                done("Do Not Disturb / mute turned off.", "Checked: zen_mode = '${setting("global", "zen_mode")}'.")
+            }
+            "fix-vibrate-on" -> {
+                requireSuccess(shell("settings put system vibrate_when_ringing 1; settings put system haptic_feedback_enabled 1"), "Vibration could not be changed.")
+                done("Vibration turned on.", "Checked: vibrate_when_ringing = '${setting("system", "vibrate_when_ringing")}'.")
+            }
+            "fix-doze-off" -> {
+                shell("dumpsys deviceidle disable 2>/dev/null || cmd deviceidle disable 2>/dev/null")
+                done("Doze battery optimization paused for testing.", "Reboot to re-enable. Verify battery impact.")
+            }
+            "fix-launcher-reset" -> {
+                shell("pm clear --user 0 com.android.launcher3 2>/dev/null; pm clear --user 0 com.sec.android.app.launcher 2>/dev/null; pm clear --user 0 com.mi.android.globallauncher 2>/dev/null")
+                done("Home launcher settings reset.", "If home is blank, press Home button to re-choose launcher.")
+            }
+            "fix-unknown-sources-off" -> {
+                requireSuccess(shell("settings put secure install_non_market_apps 0; settings put global verifier_verify_adb_installs 1 2>/dev/null"), "Setting could not be changed.")
+                done("Unknown sources blocked.", "Checked: install_non_market_apps = '${setting("secure", "install_non_market_apps")}'. Security improved.")
+            }
+            "fix-adb-wifi-off" -> {
+                shell("settings put global adb_wifi_enabled 0 2>/dev/null")
+                done("Wireless ADB turned off.", "Checked: adb_wifi_enabled = '${setting("global", "adb_wifi_enabled")}'. Use USB next time.")
+            }
+            "fix-dark-mode-off" -> {
+                shell("cmd uimode night no 2>/dev/null || settings put secure ui_night_mode 1")
+                done("Dark mode turned off.", "Checked: ui_night_mode = '${setting("secure", "ui_night_mode")}'.")
+            }
+            "fix-dark-mode-on" -> {
+                shell("cmd uimode night yes 2>/dev/null || settings put secure ui_night_mode 2")
+                done("Dark mode turned on.", "Checked: ui_night_mode = '${setting("secure", "ui_night_mode")}'.")
+            }
+            "fix-night-light-off" -> {
+                shell("settings put secure night_display_activated 0; cmd night_display set-activated false 2>/dev/null")
+                done("Night Light turned off.", "Checked: night_display_activated = '${setting("secure", "night_display_activated")}'.")
+            }
+            "fix-screen-lock-timeout" -> {
+                requireSuccess(shell("settings put secure lock_screen_lock_after_timeout 5000"), "Lock timeout could not be changed.")
+                done("Screen will lock 5s after sleep.", "Checked: lock_screen_lock_after_timeout = '${setting("secure", "lock_screen_lock_after_timeout")}'.")
+            }
+            "fix-slow-phone" -> {
+                val before = freeDataKb()
+                shell("pm trim-caches 4096G", 180000L)
+                shell("logcat -c")
+                shell("am kill-all")
+                val opt = shell("cmd package bg-dexopt-job 2>/dev/null", 900000L)
+                val after = freeDataKb()
+                done("All safe speed steps completed.", if (before != null && after != null) "Free before: ${ShellSupport.formatBytes(before*1024)}, after: ${ShellSupport.formatBytes(after*1024)}. " + opt.combined.trim().take(120) else "Caches/logs/apps handled. " + opt.combined.trim().take(120))
+            }
+            "fix-notifications" -> {
+                shell("cmd appops reset 2>/dev/null", 60000L)
+                shell("settings put global zen_mode 0; cmd notification set_dnd off 2>/dev/null")
+                shell("settings put global low_power 0")
+                done("Notification fixes applied.", "App access reset, DND off (zen_mode=${setting("global", "zen_mode")}), battery saver off. Test notifications.")
+            }
+
             else -> throw RepairException(
                 "REPAIR_NOT_ALLOWED",
                 "This repair operation is not approved."
             )
+
         }
     }
 

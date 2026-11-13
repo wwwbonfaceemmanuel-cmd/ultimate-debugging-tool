@@ -200,8 +200,42 @@ object TerminalCommands {
         fixEntry("Apps", "fix-app-disable", "pm disable-user --user 0 %s", "Switch one app off without uninstalling it. Usage: fix-app-disable <package>", Argument.PACKAGE, risk = "MEDIUM"),
         fixEntry("Apps", "fix-app-cache", "pm clear --cache-only --user 0 %s", "Delete only the temporary cache of one app. Usage: fix-app-cache <package>", Argument.PACKAGE),
         fixEntry("Apps", "fix-app-data", "pm clear --user 0 %s", "Erase one app's data and return it to a fresh install. Usage: fix-app-data <package>. The app is signed out and its data is lost.", Argument.PACKAGE, risk = "HIGH"),
+        fixEntry("Apps", "fix-app-uninstall", "pm uninstall --user 0 %s", "Uninstall an app. Usage: fix-app-uninstall <package>. Only user apps can be removed.", Argument.PACKAGE, risk = "HIGH"),
+        fixEntry("Apps", "fix-app-restore", "cmd package install-existing --user 0 %s", "Restore a removed built-in app. Usage: fix-app-restore <package>", Argument.PACKAGE),
+        fixEntry("Apps", "fix-app-updates-remove", "pm uninstall-system-updates %s", "Remove updates from a built-in app. Usage: fix-app-updates-remove <package>", Argument.PACKAGE, risk = "MEDIUM"),
+        fixEntry("Apps", "fix-app-compile", "cmd package compile -m speed -f %s", "Recompile one app for speed. Usage: fix-app-compile <package>", Argument.PACKAGE, timeoutMs = 180000L),
+        fixEntry("Apps", "fix-app-settings", "cmd appops reset %s", "Reset one app's special access. Usage: fix-app-settings <package>", Argument.PACKAGE),
+        fixEntry("Apps", "fix-app-standby", "am set-standby-bucket %s active", "Remove battery restriction from one app. Usage: fix-app-standby <package>", Argument.PACKAGE),
+        fixEntry("Apps", "fix-app-bg-allow", "cmd appops set %s RUN_IN_BACKGROUND allow", "Allow one app to run in background. Usage: fix-app-bg-allow <package>", Argument.PACKAGE),
         fixEntry("Apps", "fix-app-permissions", "pm reset-permissions", "Return every app's permissions to their defaults. Apps will ask again when needed.", risk = "MEDIUM"),
         fixEntry("Apps", "fix-appops", "cmd appops reset", "Reset every app's special access (background, notifications, overlays) to its default.", risk = "MEDIUM"),
+
+        // Network extras
+        fixEntry("Network", "fix-nfc", "svc nfc disable; sleep 2; svc nfc enable", "Restart NFC. Fixes tap-to-pay not responding."),
+        fixEntry("Network", "fix-hotspot-off", "cmd wifi set-wifi-ap-enabled null false 2>/dev/null || svc wifi setWifiApEnabled null false 2>/dev/null || settings put global tether_dun_required 0", "Turn off Wi-Fi hotspot / tethering."),
+        fixEntry("Network", "fix-data-roaming-on", "settings put global data_roaming 1", "Allow mobile data while roaming. Check with carrier for charges."),
+        fixEntry("Network", "fix-location-on", "settings put secure location_mode 3; settings put secure location_providers_allowed +gps,+network 2>/dev/null; settings put secure location_changer 0 2>/dev/null", "Turn location (GPS + network) back on."),
+
+        // Audio fixes
+        fixEntry("Audio", "fix-volume-reset", "settings put system volume_music 11; settings put system volume_ring 5; settings put system volume_notification 5; settings put system volume_system 5", "Reset music, ring and notification volume to mid levels."),
+        fixEntry("Audio", "fix-mute-off", "settings put global zen_mode 0; cmd notification set_dnd off 2>/dev/null", "Turn off Do Not Disturb / mute. Restores sound."),
+        fixEntry("Audio", "fix-vibrate-on", "settings put system vibrate_when_ringing 1; settings put system haptic_feedback_enabled 1", "Turn vibration back on for calls and touch."),
+
+        // System extras
+        fixEntry("System", "fix-doze-off", "dumpsys deviceidle disable 2>/dev/null || cmd deviceidle disable 2>/dev/null; settings put global device_idle_constants 2>/dev/null", "Pause Doze battery optimization for testing. Re-enable by rebooting."),
+        fixEntry("System", "fix-launcher-reset", "pm clear --user 0 com.android.launcher3 2>/dev/null; pm clear --user 0 com.sec.android.app.launcher 2>/dev/null; pm clear --user 0 com.mi.android.globallauncher 2>/dev/null", "Reset home screen launcher settings. Fixes blank home or missing icons.", risk = "MEDIUM"),
+        fixEntry("System", "fix-unknown-sources-off", "settings put secure install_non_market_apps 0; settings put global verifier_verify_adb_installs 1 2>/dev/null", "Block sideloading from unknown sources. Improves security."),
+        fixEntry("System", "fix-adb-wifi-off", "settings put global adb_wifi_enabled 0 2>/dev/null; svc adb 2>/dev/null", "Turn off wireless ADB after servicing."),
+
+        // Display extras
+        fixEntry("Display", "fix-dark-mode-off", "cmd uimode night no 2>/dev/null || settings put secure ui_night_mode 1", "Turn off dark mode."),
+        fixEntry("Display", "fix-dark-mode-on", "cmd uimode night yes 2>/dev/null || settings put secure ui_night_mode 2", "Turn on dark mode."),
+        fixEntry("Display", "fix-night-light-off", "settings put secure night_display_activated 0; cmd night_display set-activated false 2>/dev/null", "Turn off Night Light / blue-light filter."),
+        fixEntry("Display", "fix-screen-lock-timeout", "settings put secure lock_screen_lock_after_timeout 5000", "Lock screen quickly after sleep (5 seconds)."),
+
+        // Composite professional fixes
+        fixEntry("System", "fix-slow-phone", "pm trim-caches 4096G; logcat -c; am kill-all; cmd package bg-dexopt-job 2>/dev/null", "All safe speed steps: clear caches, logs, background apps and recompile. Takes minutes.", timeoutMs = 900000L),
+        fixEntry("System", "fix-notifications", "cmd appops reset 2>/dev/null; settings put global zen_mode 0; settings put global low_power 0; cmd notification set_dnd off 2>/dev/null", "Fix missing notifications: reset app access, DND off, battery saver off.", risk = "MEDIUM"),
 
         // Restart fixes
         fixEntry("Restart", "reboot", "reboot", "Restart Android normally. The ADB session ends.", risk = "MEDIUM"),
