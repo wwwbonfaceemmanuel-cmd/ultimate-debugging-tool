@@ -1321,6 +1321,14 @@ class DeviceBridge {
     final r = await _channel.invokeMethod<dynamic>('recordFlashBackupNote', <String, dynamic>{'partition': partition, 'note': note});
     return asMap(r);
   }
+  Future<String> getSimLockReport() async {
+    final r = await _channel.invokeMethod<dynamic>('getSimLockReport');
+    return asText(r);
+  }
+  Future<Map<String, dynamic>> generateUnlockPacket() async {
+    final r = await _channel.invokeMethod<dynamic>('generateUnlockPacket');
+    return asMap(r);
+  }
 
   Future<Map<String, dynamic>> recordOwnershipAttestation({
     required String technicianName,

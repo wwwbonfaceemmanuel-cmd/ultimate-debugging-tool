@@ -397,6 +397,8 @@ Future<Object?> fakeNative(MethodCall call) async {
     case 'recordOwnershipAttestation': return <String, Object?>{'receiptPath': '/tmp/consent.txt', 'links': <String, Object?>{}};
     case 'getOwnershipLinks': return <String, Object?>{'Google FRP help': 'https://support.google.com/android/answer/9459346'};
     case 'getDeviceIdentityForConsent': return <String, Object?>{'serial': 'R58N1', 'model': 'SM-A125F'};
+    case 'getSimLockReport': return 'SIM LOCK REPORT NETWORK_LOCKED';
+    case 'generateUnlockPacket': return <String, Object?>{'packetPath': '/tmp/unlock.txt', 'imeiRedacted': '123456****', 'advice': 'Contact carrier'};
     case 'pickUpdatePackage':
       return <String, Object?>{
         'cancelled': false,

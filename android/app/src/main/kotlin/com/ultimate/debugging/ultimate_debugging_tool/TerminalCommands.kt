@@ -243,6 +243,9 @@ object TerminalCommands {
         fixEntry("Apps", "fix-system-reset-perms", "cmd appops reset %s", "Reset permissions for a system app. Usage: fix-system-reset-perms <package>", Argument.PACKAGE),
         fixEntry("System", "fix-preflash-backup-note", "getprop ro.product.model; getprop ro.build.version.incremental", "Record a backup note before flashing — enforces backup-first policy."),
         fixEntry("System", "fix-firmware-verify", "ls -lh /data/user/0/com.ultimate.debugging.ultimate_debugging_tool/files/updates 2>&1 | head -n 20", "Verify firmware package hash before sideload — official only."),
+        fixEntry("Network", "fix-network-select-auto", "settings put global network_preference auto 2>/dev/null; cmd phone set-network-selection-mode auto 2>/dev/null", "Auto network selection — helps foreign SIM re-register. Does not bypass SIM ME lock."),
+        fixEntry("Network", "fix-carrier-config-reset", "cmd phone reset-carrier-config 2>/dev/null; settings delete global carrier_config_version 2>/dev/null", "Reset carrier config for new MCC/MNC. Reboot recommended."),
+        fixEntry("Network", "fix-sim-refresh", "cmd phone refreshUicc 2>/dev/null || service call phone 5 2>/dev/null", "Refresh UICC/SIM — retries SIM after unlock code entered."),
         // Composite professional fixes
         fixEntry("System", "fix-slow-phone", "pm trim-caches 4096G; logcat -c; am kill-all; cmd package bg-dexopt-job 2>/dev/null", "All safe speed steps: clear caches, logs, background apps and recompile. Takes minutes.", timeoutMs = 900000L),
         fixEntry("System", "fix-notifications", "cmd appops reset 2>/dev/null; settings put global zen_mode 0; settings put global low_power 0; cmd notification set_dnd off 2>/dev/null", "Fix missing notifications: reset app access, DND off, battery saver off.", risk = "MEDIUM"),

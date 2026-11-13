@@ -368,6 +368,8 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                   _extraTile('appops', 'AppOps deep audit', 'CAMERA/MIC/LOCATION', Icons.visibility, () => _bridge.getAppOpsAudit()),
                   _extraTile('thermal', 'Thermal & charging', 'thermalservice + battery', Icons.thermostat, () => _bridge.getThermalReport()),
                   _extraTile('firmware-verify', 'Verify OTA package', 'SHA-256 official only', Icons.verified, () async => 'Pick a .zip in Recovery → Update, then verify here.'),
+                  _extraTile('sim-lock', 'SIM ME / Network lock', 'gsm.sim.state + MCC/MNC (lawful)', Icons.lock_outline, () => _bridge.getSimLockReport()),
+                  _extraTile('unlock-packet', 'Carrier unlock packet', 'IMEI packet for carrier request', Icons.contact_mail, () async { final m = await _bridge.generateUnlockPacket(); return 'Packet: ${m['packetPath']}\n${m['advice']}'; }),
                 ],
               ],
             ],
