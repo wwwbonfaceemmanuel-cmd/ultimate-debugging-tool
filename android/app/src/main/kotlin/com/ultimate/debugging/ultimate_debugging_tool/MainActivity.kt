@@ -1135,8 +1135,7 @@ class MainActivity : FlutterActivity() {
         if (!confirmed) {
             reply.error(
                 "CONFIRMATION_REQUIRED",
-                "This command changes the connected phone. Confirm it first.",
-                null
+                "This command changes the connected phone. Confirm it first."
             )
             return
         }
