@@ -368,6 +368,31 @@ class MainActivity : FlutterActivity() {
             "runServiceDiagnosis" -> async(reply, "SERVICE_DIAGNOSIS_ERROR") {
                 ServiceDiagnosis(session).run().toMap()
             }
+            "getNotificationReport" -> {
+                val pkg = call.argument<String>("packageName")
+                async(reply, "NOTIFICATION_REPORT_ERROR") { NotificationInspector(session).notificationReport(pkg) }
+            }
+            "getBatteryDrainReport" -> async(reply, "BATTERY_DRAIN_ERROR") { NotificationInspector(session).batteryDrainReport() }
+            "getApnReport" -> async(reply, "APN_REPORT_ERROR") { NotificationInspector(session).apnReport() }
+            "getGfxReport" -> {
+                val pkg = call.argument<String>("packageName")
+                async(reply, "GFX_REPORT_ERROR") { NotificationInspector(session).gfxReport(pkg) }
+            }
+            "collectLogBundle" -> async(reply, "LOG_BUNDLE_ERROR") { LogBundle(session, File(filesDir, "log_bundles")).collect() }
+            "recordOwnershipAttestation" -> {
+                val tech = call.argument<String>("technicianName") ?: ""
+                val ownerPresent = call.argument<Boolean>("ownerPresent") ?: false
+                val idChecked = call.argument<Boolean>("idChecked") ?: false
+                val receiptChecked = call.argument<Boolean>("receiptChecked") ?: false
+                val notes = call.argument<String>("notes") ?: ""
+                async(reply, "OWNERSHIP_ERROR") {
+                    OwnershipVerifiedReset(session, filesDir).recordAttestation(
+                        OwnershipVerifiedReset.Attestation(tech, ownerPresent, idChecked, receiptChecked, notes)
+                    )
+                }
+            }
+            "getOwnershipLinks" -> reply.success(OwnershipVerifiedReset.OFFICIAL_LINKS)
+            "getDeviceIdentityForConsent" -> async(reply, "DEVICE_IDENTITY_ERROR") { OwnershipVerifiedReset(session, filesDir).deviceIdentity() }
 
             // ----- Terminal -----
 
@@ -1204,7 +1229,7 @@ class MainActivity : FlutterActivity() {
         val name = if (subject != null) "$title: $subject" else title
 
         return try {
-            val outcome = RepairServices(session).run(operation, packageName, confirmed)
+            val outcome = RepairServices(session, filesDir).run(operation, packageName, confirmed)
 
             recordRepair(
                 before, name, service, "Completed",

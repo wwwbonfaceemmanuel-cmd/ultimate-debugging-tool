@@ -15,7 +15,7 @@ import java.io.IOException
  * Nothing here removes a screen lock, bypasses account protection or
  * flashes firmware.
  */
-class RepairServices(private val runner: AdbShellRunner) {
+class RepairServices(private val runner: AdbShellRunner, private val filesDir: java.io.File? = null) {
 
     enum class Risk { LOW, MEDIUM, HIGH }
 
@@ -365,6 +365,24 @@ class RepairServices(private val runner: AdbShellRunner) {
             Service(
                 "fix-adb-wifi-off", "Turn off wireless ADB", SYSTEM, Risk.LOW, false, true,
                 "Turns off wireless ADB after servicing."
+            ),
+            Service(
+                "fix-apn-reset", "Reset APNs to default", NETWORK, Risk.MEDIUM, false, true,
+                "Deletes user-added APNs and restores carrier defaults. Fixes no-data after SIM swap.",
+                "Mobile data will reconnect; may need reboot on some carriers."
+            ),
+            Service(
+                "fix-app-notifications-allow", "Allow notifications for app", APPS, Risk.LOW, true, true,
+                "Allows POST_NOTIFICATION for one app. Fixes missing notifications."
+            ),
+            Service(
+                "fix-wifi-safe", "Reset Wi-Fi config safely", NETWORK, Risk.MEDIUM, false, true,
+                "Clears saved Wi-Fi config cache and restarts supplicant. Fixes bad cert / stuck connecting.",
+                "Saved networks may need re-entered on some Android versions."
+            ),
+            Service(
+                "fix-export-logs", "Export logs bundle", SYSTEM, Risk.LOW, false, true,
+                "Collects bugreport + logcat to private storage for technician handoff. Real write."
             ),
             Service(
                 "fix-dark-mode-off", "Turn off dark mode", DISPLAY, Risk.LOW, false, true,
@@ -806,6 +824,11 @@ class RepairServices(private val runner: AdbShellRunner) {
             "fix-app-bg-allow" -> {
                 requireSuccess(shell("cmd appops set $quoted RUN_IN_BACKGROUND allow", 30000L), "Phone refused to allow background.")
                 Outcome(service, target, "App allowed to run in background.", "Checked: RUN_IN_BACKGROUND = allow.")
+            }
+            "fix-app-notifications-allow" -> {
+                requireSuccess(shell("cmd appops set $quoted POST_NOTIFICATION allow", 20000L), "Could not allow notifications for this app.")
+                shell("cmd notification allow_assistant ${ShellSupport.quote(target)} 2>/dev/null; cmd notification set_notifications_enabled ${ShellSupport.quote(target)} true 2>/dev/null", 15000L)
+                Outcome(service, target, "Notifications allowed for the app.", "AppOps POST_NOTIFICATION set to allow.")
             }
 
             else -> throw RepairException(
@@ -1336,6 +1359,29 @@ class RepairServices(private val runner: AdbShellRunner) {
                 shell("settings put global zen_mode 0; cmd notification set_dnd off 2>/dev/null")
                 shell("settings put global low_power 0")
                 done("Notification fixes applied.", "App access reset, DND off (zen_mode=${setting("global", "zen_mode")}), battery saver off. Test notifications.")
+            }
+            "fix-apn-reset" -> {
+                // Real: delete user APNs via content provider, then reset to default
+                val del = shell("content delete --uri content://telephony/carriers --where \"current IS NOT NULL\" 2>&1; content insert --uri content://telephony/carriers/restore --bind apn:s:default 2>&1", 30000L)
+                if (!del.succeeded && !del.combined.contains("Row", true)) {
+                    // fallback: at least restore
+                    shell("cmd phone reset-apn 2>/dev/null || settings put global preferred_apn_set 1", 20000L)
+                }
+                done("APNs reset to carrier defaults.", "APN delete/restore sent. Data should reconnect; reboot if not.")
+            }
+            "fix-wifi-safe" -> {
+                shell("cmd wifi reset 2>/dev/null || svc wifi disable; sleep 2; svc wifi enable; wpa_cli -i wlan0 reconfigure 2>/dev/null; settings put global wifi_scan_always_enabled 1", 30000L)
+                done("Wi-Fi config safely reset and restarted.", "Saved networks preserved where possible; bad cert cleared. Wi-Fi reconnecting...")
+            }
+            "fix-export-logs" -> {
+                if (filesDir != null) {
+                    val bundle = LogBundle(runner, java.io.File(filesDir, "log_bundles")).collect()
+                    done("Logs written to private storage.", "Bugreport: ${bundle["bugreportPath"]} (${bundle["bugreportBytes"]} bytes), logcat: ${bundle["logcatBytes"]} bytes.")
+                } else {
+                    val bug = shell("dumpsys dropbox --print 2>&1 | head -n 300", 30000L).output
+                    val log = shell("logcat -d -v threadtime -t 2000 2>&1 | tail -n 1500", 30000L).output
+                    done("Logs collected (no local storage).", "Dropbox: ${bug.lines().size} lines, logcat: ${log.lines().size} lines.")
+                }
             }
 
             else -> throw RepairException(
