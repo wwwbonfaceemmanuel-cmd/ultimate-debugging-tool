@@ -18,6 +18,16 @@ class TerminalCommandsTest {
         return ""
     }
 
+    private fun rejectedFix(input: String): String {
+        try {
+            TerminalCommands.resolveFix(input)
+            fail("'$input' should have been refused as fix")
+        } catch (expected: TerminalCommands.Rejected) {
+            return expected.message!!
+        }
+        return ""
+    }
+
     @Test
     fun knownCommandsResolve() {
         assertEquals("getprop ro.product.model", TerminalCommands.resolve("device-model").shell)
@@ -101,8 +111,11 @@ class TerminalCommandsTest {
         val help = TerminalCommands.helpText(rootMode = false)
         assertTrue(help.contains("ADB MODE"))
         assertTrue(TerminalCommands.catalog.all { help.contains(it.name) })
+        assertTrue(TerminalCommands.fixCatalog.all { help.contains(it.name) })
+        assertTrue(help.contains("FIX COMMANDS"))
         assertTrue(TerminalCommands.helpText(rootMode = true).contains("ROOT MODE"))
         assertEquals(TerminalCommands.catalog.size, TerminalCommands.describe().size)
+        assertEquals(TerminalCommands.fixCatalog.size, TerminalCommands.describeFixes().size)
     }
 
     @Test
@@ -111,5 +124,93 @@ class TerminalCommandsTest {
         assertTrue(ShellSupport.isPackageName("com.whatsapp"))
         assertFalse(ShellSupport.isPackageName("com.whatsapp;id"))
         assertFalse(ShellSupport.isPackageName("whatsapp"))
+    }
+
+    // ---- Fix catalog (new) ----
+
+    @Test
+    fun fixCatalogIsSeparateFromRead() {
+        val readNames = TerminalCommands.catalog.map { it.name }.toSet()
+        val fixNames = TerminalCommands.fixCatalog.map { it.name }.toSet()
+        // No overlap except intentional reboot family which is fix-only now
+        // Read catalog must not contain fix names, and resolve() must reject fix names
+        for (name in fixNames) {
+            if (name !in readNames) {
+                try {
+                    TerminalCommands.resolve(name)
+                    fail("read catalog should not resolve fix command '$name'")
+                } catch (_: TerminalCommands.Rejected) {}
+            }
+        }
+    }
+
+    @Test
+    fun fixNamesAreUniqueAndLowercase() {
+        val names = TerminalCommands.fixCatalog.map { it.name }
+        assertEquals(names.size, names.toSet().size)
+        assertTrue(names.all { it == it.lowercase() })
+        assertTrue(names.all { it.startsWith("fix-") || it.startsWith("reboot") })
+    }
+
+    @Test
+    fun everyFixResolvesToItself() {
+        for (entry in TerminalCommands.fixCatalog) {
+            if (entry.argument == TerminalCommands.Argument.NONE) {
+                assertEquals(entry.shell, TerminalCommands.resolveFix(entry.name).shell)
+                assertTrue(entry.isFix)
+            } else {
+                assertTrue(entry.shell.contains("%s"))
+                assertTrue(entry.isFix)
+            }
+        }
+    }
+
+    @Test
+    fun fixCatalogCountsMatchDocs() {
+        assertEquals(77, TerminalCommands.catalog.size)
+        assertEquals(62, TerminalCommands.fixCatalog.size)
+        assertEquals(139, TerminalCommands.catalog.size + TerminalCommands.fixCatalog.size)
+    }
+
+    @Test
+    fun fixRiskLevelsAreValid() {
+        val valid = setOf("LOW", "MEDIUM", "HIGH")
+        for (entry in TerminalCommands.fixCatalog) {
+            assertTrue("${entry.name} has valid risk", entry.risk in valid)
+        }
+        // HIGH is only for data-loss commands
+        val high = TerminalCommands.fixCatalog.filter { it.risk == "HIGH" }.map { it.name }
+        assertTrue(high.all { it.contains("uninstall") || it.contains("data") })
+        assertTrue(high.isNotEmpty())
+    }
+
+    @Test
+    fun fixPackageArgsAreValidated() {
+        val resolved = TerminalCommands.resolveFix("fix-app-cache com.example.app")
+        assertEquals("pm clear --cache-only --user 0 'com.example.app'", resolved.shell)
+        rejectedFix("fix-app-cache com.example.app; reboot")
+        rejectedFix("fix-app-cache notapackage")
+        assertTrue(rejectedFix("fix-app-stop").contains("Usage"))
+        // reboot family has no args
+        rejectedFix("reboot extra")
+    }
+
+    @Test
+    fun fixFreeFormIsRefused() {
+        rejectedFix("fix-wifi; reboot")
+        rejectedFix("fix-app-data com.example.app && rm -rf /")
+        rejectedFix("")
+        rejectedFix("rm -rf /sdcard")
+    }
+
+    @Test
+    fun describeFixesMirrorsCatalog() {
+        val described = TerminalCommands.describeFixes()
+        assertEquals(TerminalCommands.fixCatalog.size, described.size)
+        for (m in described) {
+            assertTrue(m.containsKey("isFix"))
+            assertTrue(m.containsKey("risk"))
+            assertEquals(true, m["isFix"])
+        }
     }
 }
