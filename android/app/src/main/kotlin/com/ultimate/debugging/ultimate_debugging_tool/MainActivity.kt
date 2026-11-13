@@ -368,6 +368,17 @@ class MainActivity : FlutterActivity() {
             "runServiceDiagnosis" -> async(reply, "SERVICE_DIAGNOSIS_ERROR") {
                 ServiceDiagnosis(session).run().toMap()
             }
+            "getNotificationReport" -> {
+                val pkg = call.argument<String>("packageName")
+                async(reply, "NOTIFICATION_REPORT_ERROR") { NotificationInspector(session).notificationReport(pkg) }
+            }
+            "getBatteryDrainReport" -> async(reply, "BATTERY_DRAIN_ERROR") { NotificationInspector(session).batteryDrainReport() }
+            "getApnReport" -> async(reply, "APN_REPORT_ERROR") { NotificationInspector(session).apnReport() }
+            "getGfxReport" -> {
+                val pkg = call.argument<String>("packageName")
+                async(reply, "GFX_REPORT_ERROR") { NotificationInspector(session).gfxReport(pkg) }
+            }
+            "collectLogBundle" -> async(reply, "LOG_BUNDLE_ERROR") { LogBundle(session, File(filesDir, "log_bundles")).collect() }
 
             // ----- Terminal -----
 

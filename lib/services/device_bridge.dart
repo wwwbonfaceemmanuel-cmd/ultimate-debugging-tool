@@ -1249,6 +1249,37 @@ class DeviceBridge {
     return ServiceDiagnosisResult.fromMap(asMap(result));
   }
 
+  Future<String> getNotificationReport({String? packageName}) async {
+    final result = await _channel.invokeMethod<dynamic>(
+      'getNotificationReport',
+      <String, dynamic>{'packageName': packageName},
+    );
+    return asText(result);
+  }
+
+  Future<String> getBatteryDrainReport() async {
+    final result = await _channel.invokeMethod<dynamic>('getBatteryDrainReport');
+    return asText(result);
+  }
+
+  Future<String> getApnReport() async {
+    final result = await _channel.invokeMethod<dynamic>('getApnReport');
+    return asText(result);
+  }
+
+  Future<String> getGfxReport({String? packageName}) async {
+    final result = await _channel.invokeMethod<dynamic>(
+      'getGfxReport',
+      <String, dynamic>{'packageName': packageName},
+    );
+    return asText(result);
+  }
+
+  Future<Map<String, dynamic>> collectLogBundle() async {
+    final result = await _channel.invokeMethod<dynamic>('collectLogBundle');
+    return asMap(result);
+  }
+
   // ----- Repair services -----
 
   Future<List<RepairServiceInfo>> getRepairCatalog() async {

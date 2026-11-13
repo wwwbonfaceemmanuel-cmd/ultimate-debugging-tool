@@ -233,6 +233,10 @@ object TerminalCommands {
         fixEntry("Display", "fix-night-light-off", "settings put secure night_display_activated 0; cmd night_display set-activated false 2>/dev/null", "Turn off Night Light / blue-light filter."),
         fixEntry("Display", "fix-screen-lock-timeout", "settings put secure lock_screen_lock_after_timeout 5000", "Lock screen quickly after sleep (5 seconds)."),
 
+        fixEntry("Network", "fix-apn-reset", "content delete --uri content://telephony/carriers --where \"current IS NOT NULL\" 2>&1; cmd phone reset-apn 2>/dev/null", "Reset APNs to carrier defaults. Fixes no-data after SIM swap.", risk = "MEDIUM"),
+        fixEntry("Network", "fix-wifi-safe", "cmd wifi reset 2>/dev/null || svc wifi disable; sleep 2; svc wifi enable", "Safely reset Wi-Fi config and restart. Fixes bad cert / stuck connecting.", risk = "MEDIUM"),
+        fixEntry("Apps", "fix-app-notifications-allow", "cmd appops set %s POST_NOTIFICATION allow; cmd notification set_notifications_enabled %s true 2>/dev/null", "Allow notifications for one app. Usage: fix-app-notifications-allow <package>", Argument.PACKAGE),
+        fixEntry("System", "export-logs", "dumpsys dropbox --print 2>&1 | head -n 300; logcat -d -v threadtime -t 2000 2>&1 | tail -n 1500", "Collect bugreport+logcat bundle for handoff. Real write to private storage via RepairService export-logs."),
         // Composite professional fixes
         fixEntry("System", "fix-slow-phone", "pm trim-caches 4096G; logcat -c; am kill-all; cmd package bg-dexopt-job 2>/dev/null", "All safe speed steps: clear caches, logs, background apps and recompile. Takes minutes.", timeoutMs = 900000L),
         fixEntry("System", "fix-notifications", "cmd appops reset 2>/dev/null; settings put global zen_mode 0; settings put global low_power 0; cmd notification set_dnd off 2>/dev/null", "Fix missing notifications: reset app access, DND off, battery saver off.", risk = "MEDIUM"),

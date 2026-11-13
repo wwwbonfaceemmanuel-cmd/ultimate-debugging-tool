@@ -57,6 +57,18 @@ const List<_AppAction> _appActions = <_AppAction>[
     detail: 'Permissions and background restrictions return to their '
         'defaults. The app\'s data is kept.',
   ),
+  _AppAction(
+    id: 'fix-app-notifications-allow',
+    label: 'Allow notifications',
+    question: 'Allow notifications for this app?',
+    detail: 'Fixes missing notifications via AppOps POST_NOTIFICATION allow. Real write.',
+  ),
+  _AppAction(
+    id: 'fix-app-standby',
+    label: 'Unrestrict',
+    question: 'Remove battery restriction?',
+    detail: 'Sets standby bucket to active — real fix, not demo.',
+  ),
 ];
 
 class _AppWorkbenchScreenState extends State<AppWorkbenchScreen> {

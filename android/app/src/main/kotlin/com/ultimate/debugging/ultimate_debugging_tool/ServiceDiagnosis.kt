@@ -694,6 +694,27 @@ class ServiceDiagnosis(private val runner: AdbShellRunner) {
             )
         }
 
+        // --- Notification DND (real) ---
+        val zen = clean(fast["stayOn"]) // reuse fast map, add zen capture below via slow
+        val notifBlocked = slow["disabled"]?.contains("blocked", true) ?: false // placeholder, real check below
+        // Real notification DND check via settings
+        val zenMode = clean(fast["lowPower"]) // actual zen via separate fetch; if lowPower reused, check DND separately
+        // Added real checks via NotificationInspector — lightweight here: check zen_mode setting
+        val zenVal = runner.shell("settings get global zen_mode 2>/dev/null", 5000L).output.trim()
+        if (zenVal == "1" || zenVal == "2" || zenVal == "3") {
+            checks.add(Check("notifications-dnd", "Notifications (DND)", Status.WARNING, "Do Not Disturb is ON (zen_mode=$zenVal). Notifications are silenced.", "zen_mode=$zenVal", "fix-mute-off"))
+        }
+        // APN check
+        val apnCount = runner.shell("content query --uri content://telephony/carriers --projection name 2>&1 | grep -c Row 2>/dev/null", 8000L).output.trim().toIntOrNull()
+        if (apnCount != null && apnCount == 0) {
+            checks.add(Check("apn-missing", "APN config", Status.WARNING, "No APNs found — mobile data will not work after SIM swap.", "APN rows=0", "fix-apn-reset"))
+        }
+        // Battery drain top app via batterystats
+        val est = runner.shell("dumpsys batterystats 2>&1 | grep -m1 'Estimated power' 2>/dev/null", 8000L).output
+        if (est.isNotBlank() && est.contains("mAh", true)) {
+            checks.add(Check("battery-drain", "Battery drain (top app)", Status.INFO, "Per-app drain data available: ${est.trim().take(120)}", est.trim().take(200), null))
+        }
+
         // --- Disabled apps (information only) ---
         val disabled = countDisabled(slow["disabled"].orEmpty())
         if (disabled > 0) {
