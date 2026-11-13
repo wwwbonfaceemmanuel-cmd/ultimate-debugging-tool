@@ -1329,6 +1329,26 @@ class DeviceBridge {
     final r = await _channel.invokeMethod<dynamic>('generateUnlockPacket');
     return asMap(r);
   }
+  Future<String> getVirusScan() async {
+    final r = await _channel.invokeMethod<dynamic>('getVirusScan');
+    return asText(r);
+  }
+  Future<List<Map<String, dynamic>>> getVirusFindings() async {
+    final r = await _channel.invokeMethod<dynamic>('getVirusFindings');
+    return asMapList(r);
+  }
+  Future<String> getDuplicateReport() async {
+    final r = await _channel.invokeMethod<dynamic>('getDuplicateReport');
+    return asText(r);
+  }
+  Future<String> getStartupReport() async {
+    final r = await _channel.invokeMethod<dynamic>('getStartupReport');
+    return asText(r);
+  }
+  Future<String> getSensorReport() async {
+    final r = await _channel.invokeMethod<dynamic>('getSensorReport');
+    return asText(r);
+  }
 
   Future<Map<String, dynamic>> recordOwnershipAttestation({
     required String technicianName,

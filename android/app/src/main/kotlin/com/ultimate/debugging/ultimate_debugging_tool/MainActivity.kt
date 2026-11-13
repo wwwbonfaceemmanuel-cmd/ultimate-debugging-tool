@@ -482,6 +482,11 @@ class MainActivity : FlutterActivity() {
             }
             "getSimLockReport" -> async(reply, "SIM_LOCK_ERROR") { SimNetworkInspector(session, filesDir).simLockReport() }
             "generateUnlockPacket" -> async(reply, "UNLOCK_PACKET_ERROR") { SimNetworkInspector(session, filesDir).generateUnlockPacket() }
+            "getVirusScan" -> async(reply, "VIRUS_SCAN_ERROR") { VirusScanner(session).scanReport() }
+            "getVirusFindings" -> async(reply, "VIRUS_FINDINGS_ERROR") { VirusScanner(session).findingsList() }
+            "getDuplicateReport" -> async(reply, "DUPLICATE_ERROR") { UniversalMaintenance(session).duplicateReport() }
+            "getStartupReport" -> async(reply, "STARTUP_ERROR") { UniversalMaintenance(session).startupReport() }
+            "getSensorReport" -> async(reply, "SENSOR_ERROR") { UniversalMaintenance(session).sensorReport() }
 
             // ----- Files on the connected phone -----
 

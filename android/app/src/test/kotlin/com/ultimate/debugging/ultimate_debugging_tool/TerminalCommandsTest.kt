@@ -168,8 +168,8 @@ class TerminalCommandsTest {
     @Test
     fun fixCatalogCountsMatchDocs() {
         assertEquals(77, TerminalCommands.catalog.size)
-        assertEquals(74, TerminalCommands.fixCatalog.size)
-        assertEquals(151, TerminalCommands.catalog.size + TerminalCommands.fixCatalog.size)
+        assertEquals(80, TerminalCommands.fixCatalog.size)
+        assertEquals(157, TerminalCommands.catalog.size + TerminalCommands.fixCatalog.size)
     }
 
     @Test

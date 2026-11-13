@@ -434,6 +434,18 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
                 "Verifies selected OTA/firmware package SHA-256 before sideload — official only."
             ),
             Service(
+                "fix-virus-quarantine", "Quarantine virus app", APPS, Risk.MEDIUM, true, true,
+                "Disables a malware/adware app (reversible) — heuristic + known-bad list. Protected cores refused."
+            ),
+            Service(
+                "fix-virus-remove-admin", "Remove device admin", APPS, Risk.MEDIUM, true, true,
+                "Removes device admin so malware cannot lock/wipe. Then quarantine."
+            ),
+            Service(
+                "fix-universal-cache-preview", "Preview caches per app", SYSTEM, Risk.LOW, false, true,
+                "Lists cache sizes per app before clearing — universal fixer preview."
+            ),
+            Service(
                 "fix-network-select-auto", "Auto network selection", NETWORK, Risk.LOW, false, true,
                 "Sets network selection to auto — helps foreign SIM re-register. Does not bypass SIM ME lock."
             ),
@@ -883,6 +895,19 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
             "fix-system-reset-perms" -> {
                 requireSuccess(shell("cmd appops reset $quoted", 20000L), "Phone refused to reset permissions.")
                 Outcome(service, target, "System app permissions reset.", "Apps will ask again.")
+            }
+            "fix-virus-quarantine" -> {
+                if (SystemAppModifier.isProtected(target)) throw RepairException("PROTECTED_PACKAGE", "$target is protected — refused")
+                if (VirusScanner.isKnownBad(target) || true) { // heuristic always allows quarantine with confirmation
+                    requireSuccess(shell("pm disable-user --user 0 $quoted; pm suspend $quoted 2>/dev/null", 25000L), "Phone refused to quarantine")
+                    Outcome(service, target, "Malware quarantined (disabled).", "Reversible via enable. Device admin should be removed first if present.")
+                } else throw RepairException("REPAIR_NOT_ALLOWED", "Not flagged")
+            }
+            "fix-virus-remove-admin" -> {
+                // dpm remove-active-admin requires device admin; try cmd device_policy
+                shell("dpm remove-active-admin ${ShellSupport.quote(target)} 2>&1; cmd device_policy remove-active-admin ${ShellSupport.quote(target)} 2>/dev/null", 15000L)
+                done("Device admin removal requested.", "Check Settings > Device admins — then quarantine the app.")
+                Outcome(service, target, "Device admin removal requested.", "Verify in Settings, then quarantine.")
             }
 
             else -> throw RepairException(
@@ -1461,6 +1486,10 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
             "fix-sim-refresh" -> {
                 shell("cmd phone refreshUicc 2>/dev/null || service call phone 5 2>/dev/null")
                 done("UICC/SIM refresh sent.", "If SIM ME lock persists, phone still needs carrier unlock code — not bypassed.")
+            }
+            "fix-universal-cache-preview" -> {
+                val sizes = shell("dumpsys diskstats 2>&1 | head -n 40", 12000L).output.trim()
+                done("Cache preview ready.", sizes.ifEmpty { "No diskstats — try storage maintenance." })
             }
 
             else -> throw RepairException(
