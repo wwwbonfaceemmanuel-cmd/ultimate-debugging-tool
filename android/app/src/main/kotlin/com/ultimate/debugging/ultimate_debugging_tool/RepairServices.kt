@@ -773,6 +773,41 @@ class RepairServices(private val runner: AdbShellRunner) {
                 )
             }
 
+            "uninstall-app-terminal", "fix-app-uninstall" -> {
+                if (!isInstalled(quoted)) throw RepairException("PACKAGE_NOT_FOUND", "App not found on connected device.")
+                if (isSystemPackage(target, quoted)) throw RepairException("SYSTEM_PACKAGE", "System apps cannot be uninstalled this way. Use 'Remove updates' or Disable.")
+                val result = shell("pm uninstall --user 0 $quoted", 60000L)
+                if (!result.combined.contains("Success")) throw RepairException("REPAIR_EXECUTION_ERROR", failureText(result, "Phone refused to uninstall the app."))
+                Outcome(service, target, "The app was uninstalled.", if (isInstalled(quoted)) "Phone reports Success but app remains for another user." else "Checked: app no longer installed.")
+            }
+            "restore-system-app-terminal", "fix-app-restore" -> {
+                val result = shell("cmd package install-existing --user 0 $quoted", 60000L)
+                if (!isInstalled(quoted)) throw RepairException("REPAIR_EXECUTION_ERROR", failureText(result, "App could not be restored. Not part of this phone's software."))
+                Outcome(service, target, "The built-in app was restored.", "Checked: app is installed again.")
+            }
+            "fix-app-updates-remove" -> {
+                val result = shell("pm uninstall-system-updates $quoted", 120000L)
+                if (!result.succeeded || result.combined.contains("Error")) throw RepairException("REPAIR_EXECUTION_ERROR", failureText(result, "Phone refused to remove updates. Only built-in apps have updates."))
+                Outcome(service, target, "Updates were removed from the built-in app.", "App is back to factory version. Store may update it again.")
+            }
+            "fix-app-compile" -> {
+                val result = shell("cmd package compile -m speed -f $quoted", 180000L)
+                if (!result.succeeded) throw RepairException("REPAIR_EXECUTION_ERROR", failureText(result, "Phone refused to recompile the app."))
+                Outcome(service, target, "The app was recompiled.", "Phone answered: " + result.combined.trim().ifEmpty { "Success" }.take(200))
+            }
+            "fix-app-settings" -> {
+                requireSuccess(shell("cmd appops reset $quoted", 60000L), "Phone refused to reset the app's settings.")
+                Outcome(service, target, "The app's special access was reset.", "Checked: phone accepted. App data kept.")
+            }
+            "fix-app-standby" -> {
+                requireSuccess(shell("am set-standby-bucket $quoted active", 30000L), "Phone refused to change standby bucket.")
+                Outcome(service, target, "Battery restriction removed from the app.", "Checked: standby bucket set to active.")
+            }
+            "fix-app-bg-allow" -> {
+                requireSuccess(shell("cmd appops set $quoted RUN_IN_BACKGROUND allow", 30000L), "Phone refused to allow background.")
+                Outcome(service, target, "App allowed to run in background.", "Checked: RUN_IN_BACKGROUND = allow.")
+            }
+
             else -> throw RepairException(
                 "REPAIR_NOT_ALLOWED",
                 "This repair operation is not approved."
@@ -1223,48 +1258,6 @@ class RepairServices(private val runner: AdbShellRunner) {
                 )
             }
 
-            // --- Extended fixing side: mirrors + professional extras ---
-            "uninstall-app-terminal", "fix-app-uninstall" -> {
-                val quoted = ShellSupport.quote(target)
-                if (!isInstalled(quoted)) throw RepairException("PACKAGE_NOT_FOUND", "App not found on connected device.")
-                if (isSystemPackage(target, quoted)) throw RepairException("SYSTEM_PACKAGE", "System apps cannot be uninstalled this way. Use 'Remove updates' or Disable.")
-                val result = shell("pm uninstall --user 0 $quoted", 60000L)
-                if (!result.combined.contains("Success")) throw RepairException("REPAIR_EXECUTION_ERROR", failureText(result, "Phone refused to uninstall the app."))
-                done("The app was uninstalled.", if (isInstalled(quoted)) "Phone reports Success but app remains for another user." else "Checked: app no longer installed.")
-            }
-            "restore-system-app-terminal", "fix-app-restore" -> {
-                val quoted = ShellSupport.quote(target)
-                val result = shell("cmd package install-existing --user 0 $quoted", 60000L)
-                if (!isInstalled(quoted)) throw RepairException("REPAIR_EXECUTION_ERROR", failureText(result, "App could not be restored. Not part of this phone's software."))
-                done("The built-in app was restored.", "Checked: app is installed again.")
-            }
-            "fix-app-updates-remove" -> {
-                val quoted = ShellSupport.quote(target)
-                val result = shell("pm uninstall-system-updates $quoted", 120000L)
-                if (!result.succeeded || result.combined.contains("Error")) throw RepairException("REPAIR_EXECUTION_ERROR", failureText(result, "Phone refused to remove updates. Only built-in apps have updates."))
-                done("Updates were removed from the built-in app.", "App is back to factory version. Store may update it again.")
-            }
-            "fix-app-compile" -> {
-                val quoted = ShellSupport.quote(target)
-                val result = shell("cmd package compile -m speed -f $quoted", 180000L)
-                if (!result.succeeded) throw RepairException("REPAIR_EXECUTION_ERROR", failureText(result, "Phone refused to recompile the app."))
-                done("The app was recompiled.", "Phone answered: " + result.combined.trim().ifEmpty { "Success" }.take(200))
-            }
-            "fix-app-settings" -> {
-                val quoted = ShellSupport.quote(target)
-                requireSuccess(shell("cmd appops reset $quoted", 60000L), "Phone refused to reset the app's settings.")
-                done("The app's special access was reset.", "Checked: phone accepted. App data kept.")
-            }
-            "fix-app-standby" -> {
-                val quoted = ShellSupport.quote(target)
-                requireSuccess(shell("am set-standby-bucket $quoted active", 30000L), "Phone refused to change standby bucket.")
-                done("Battery restriction removed from the app.", "Checked: standby bucket set to active.")
-            }
-            "fix-app-bg-allow" -> {
-                val quoted = ShellSupport.quote(target)
-                requireSuccess(shell("cmd appops set $quoted RUN_IN_BACKGROUND allow", 30000L), "Phone refused to allow background.")
-                done("App allowed to run in background.", "Checked: RUN_IN_BACKGROUND = allow.")
-            }
             "fix-nfc" -> {
                 val off = shell("svc nfc disable")
                 requireSuccess(off, "NFC could not be switched off on this Android version.")
