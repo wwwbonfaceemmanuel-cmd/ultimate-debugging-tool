@@ -379,6 +379,20 @@ class MainActivity : FlutterActivity() {
                 async(reply, "GFX_REPORT_ERROR") { NotificationInspector(session).gfxReport(pkg) }
             }
             "collectLogBundle" -> async(reply, "LOG_BUNDLE_ERROR") { LogBundle(session, File(filesDir, "log_bundles")).collect() }
+            "recordOwnershipAttestation" -> {
+                val tech = call.argument<String>("technicianName") ?: ""
+                val ownerPresent = call.argument<Boolean>("ownerPresent") ?: false
+                val idChecked = call.argument<Boolean>("idChecked") ?: false
+                val receiptChecked = call.argument<Boolean>("receiptChecked") ?: false
+                val notes = call.argument<String>("notes") ?: ""
+                async(reply, "OWNERSHIP_ERROR") {
+                    OwnershipVerifiedReset(session, filesDir).recordAttestation(
+                        OwnershipVerifiedReset.Attestation(tech, ownerPresent, idChecked, receiptChecked, notes)
+                    )
+                }
+            }
+            "getOwnershipLinks" -> reply.success(OwnershipVerifiedReset.OFFICIAL_LINKS)
+            "getDeviceIdentityForConsent" -> async(reply, "DEVICE_IDENTITY_ERROR") { OwnershipVerifiedReset(session, filesDir).deviceIdentity() }
 
             // ----- Terminal -----
 

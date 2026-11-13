@@ -58,6 +58,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   String _running = '';
   String _resultTitle = '';
   String _resultText = '';
+  String _extraRunning = '';
   bool _resultFailed = false;
 
   @override
@@ -80,6 +81,31 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   }
 
   String _titleOf(String name) => _titles[name] ?? name;
+
+  Future<void> _runExtra(String id, String title, Future<String> Function() fetch) async {
+    if (_running.isNotEmpty || _extraRunning.isNotEmpty) return;
+    setState(() {
+      _extraRunning = id;
+      _resultTitle = title;
+      _resultText = '';
+      _resultFailed = false;
+    });
+    String text = '';
+    bool failed = false;
+    try {
+      text = await fetch();
+    } catch (e) {
+      text = describeError(e);
+      failed = true;
+    }
+    await _bridge.saveHistory(operation: 'Report: $title', category: 'Diagnostics', result: failed ? 'Failed' : 'Completed', details: text, onTarget: _onTarget);
+    if (!mounted) return;
+    setState(() {
+      _extraRunning = '';
+      _resultText = text;
+      _resultFailed = failed;
+    });
+  }
 
   Future<void> _run(NamedItem report) async {
     if (_running.isNotEmpty) return;
@@ -171,6 +197,26 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _extraTile(String id, String title, String subtitle, IconData icon, Future<String> Function() fetch) {
+    final running = _extraRunning == id;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        child: ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          leading: Icon(icon, color: AppColors.warning),
+          title: Text(title, style: const TextStyle(color: Colors.white)),
+          subtitle: Text(subtitle, style: const TextStyle(color: Colors.white60)),
+          trailing: running ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5)) : const Icon(Icons.play_arrow, color: Colors.white54),
+          enabled: _running.isEmpty && _extraRunning.isEmpty,
+          onTap: () => _runExtra(id, title, fetch),
         ),
       ),
     );
@@ -307,6 +353,15 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
               else ...[
                 const SectionTitle('Reports'),
                 for (final report in reports) _buildReportTile(report),
+                if (_onTarget) ...[
+                  const SizedBox(height: 12),
+                  const SectionTitle('Technician extras (real — not demo)'),
+                  _extraTile('notification-audit', 'Notification audit', 'DND + per-app blocked + AppOps', Icons.notifications_off, () => _bridge.getNotificationReport()),
+                  _extraTile('battery-drain', 'Battery drain (top apps)', 'dumpsys batterystats per-app mAh', Icons.battery_alert, () => _bridge.getBatteryDrainReport()),
+                  _extraTile('apn-config', 'APN config', 'content://telephony/carriers', Icons.sim_card, () => _bridge.getApnReport()),
+                  _extraTile('gfx-jank', 'GFX jank', 'dumpsys gfxinfo framestats', Icons.speed, () => _bridge.getGfxReport()),
+                  _extraTile('log-bundle', 'Collect log bundle', 'Writes bugreport+logcat to storage', Icons.bug_report, () async { final m = await _bridge.collectLogBundle(); return m['bugreportLines'] as String? ?? m.toString(); }),
+                ],
               ],
             ],
           );

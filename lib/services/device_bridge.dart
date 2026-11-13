@@ -1280,6 +1280,36 @@ class DeviceBridge {
     return asMap(result);
   }
 
+  Future<Map<String, dynamic>> recordOwnershipAttestation({
+    required String technicianName,
+    required bool ownerPresent,
+    required bool idChecked,
+    required bool receiptChecked,
+    String notes = '',
+  }) async {
+    final result = await _channel.invokeMethod<dynamic>(
+      'recordOwnershipAttestation',
+      <String, dynamic>{
+        'technicianName': technicianName,
+        'ownerPresent': ownerPresent,
+        'idChecked': idChecked,
+        'receiptChecked': receiptChecked,
+        'notes': notes,
+      },
+    );
+    return asMap(result);
+  }
+
+  Future<Map<String, dynamic>> getOwnershipLinks() async {
+    final result = await _channel.invokeMethod<dynamic>('getOwnershipLinks');
+    return asMap(result);
+  }
+
+  Future<Map<String, dynamic>> getDeviceIdentityForConsent() async {
+    final result = await _channel.invokeMethod<dynamic>('getDeviceIdentityForConsent');
+    return asMap(result);
+  }
+
   // ----- Repair services -----
 
   Future<List<RepairServiceInfo>> getRepairCatalog() async {
