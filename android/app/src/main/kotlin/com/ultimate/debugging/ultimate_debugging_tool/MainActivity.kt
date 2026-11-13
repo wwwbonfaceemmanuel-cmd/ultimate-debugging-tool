@@ -1229,7 +1229,7 @@ class MainActivity : FlutterActivity() {
         val name = if (subject != null) "$title: $subject" else title
 
         return try {
-            val outcome = RepairServices(session).run(operation, packageName, confirmed)
+            val outcome = RepairServices(session, filesDir).run(operation, packageName, confirmed)
 
             recordRepair(
                 before, name, service, "Completed",

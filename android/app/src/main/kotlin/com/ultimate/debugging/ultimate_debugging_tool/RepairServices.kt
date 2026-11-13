@@ -15,7 +15,7 @@ import java.io.IOException
  * Nothing here removes a screen lock, bypasses account protection or
  * flashes firmware.
  */
-class RepairServices(private val runner: AdbShellRunner) {
+class RepairServices(private val runner: AdbShellRunner, private val filesDir: java.io.File? = null) {
 
     enum class Risk { LOW, MEDIUM, HIGH }
 
@@ -1376,12 +1376,15 @@ class RepairServices(private val runner: AdbShellRunner) {
                 done("Wi-Fi config safely reset and restarted.", "Saved networks preserved where possible; bad cert cleared. Wi-Fi reconnecting...")
             }
             "export-logs" -> {
-                // Real write via LogBundle helper — here inline for no extra dep
-                val outDir = java.io.File(runner.toString()) // placeholder: MainActivity passes filesDir via RepairHistoryStore, we use temp
-                // Use AdbShellSession to pull files: instead we collect remotely and report
-                val bug = shell("dumpsys dropbox --print 2>&1 | head -n 300", 30000L).output
-                val log = shell("logcat -d -v threadtime -t 2000 2>&1 | tail -n 1500", 30000L).output
-                done("Logs collected for handoff.", "Dropbox: ${bug.lines().size} lines, logcat: ${log.lines().size} lines. Share via RepairHistory export.")
+                // Real write: delegate to LogBundle when filesDir is available
+                if (filesDir != null) {
+                    val bundle = LogBundle(runner, java.io.File(filesDir, "log_bundles")).collect()
+                    done("Logs written to private storage.", "Bugreport: ${bundle["bugreportPath"]} (${bundle["bugreportBytes"]} bytes), logcat: ${bundle["logcatBytes"]} bytes.")
+                } else {
+                    val bug = shell("dumpsys dropbox --print 2>&1 | head -n 300", 30000L).output
+                    val log = shell("logcat -d -v threadtime -t 2000 2>&1 | tail -n 1500", 30000L).output
+                    done("Logs collected (no local storage).", "Dropbox: ${bug.lines().size} lines, logcat: ${log.lines().size} lines.")
+                }
             }
 
             else -> throw RepairException(
