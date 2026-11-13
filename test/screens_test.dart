@@ -379,6 +379,24 @@ Future<Object?> fakeNative(MethodCall call) async {
           'enabled': true,
         },
       ];
+    case 'prepareFlashGuard': return 'Backup check OK';
+    case 'recordFlashBackupNote': return <String, Object?>{'path': '/tmp/note.txt', 'bytes': 120};
+    case 'getSystemAppReport': return 'SYSTEM APP REPORT for ' + asText(args['packageName']);
+    case 'getLargeFilesReport': return 'LARGE FILES REPORT';
+    case 'getExportChecklist': return 'EXPORT CHECKLIST';
+    case 'getWifiHandoff': return 'WIFI HANDOFF';
+    case 'getNetworkLab': return 'NETWORK LAB';
+    case 'getAppOpsAudit': return 'APPOPS AUDIT';
+    case 'getThermalReport': return 'THERMAL REPORT';
+    case 'verifyFirmwarePackage': return 'FIRMWARE VERIFY OK';
+    case 'getNotificationReport': return 'NOTIFICATION REPORT';
+    case 'getBatteryDrainReport': return 'BATTERY DRAIN';
+    case 'getApnReport': return 'APN REPORT';
+    case 'getGfxReport': return 'GFX REPORT';
+    case 'collectLogBundle': return <String, Object?>{'bugreportPath': '/tmp/bug.txt', 'bugreportBytes': 1234, 'logcatBytes': 567, 'bugreportLines': 'lines'};
+    case 'recordOwnershipAttestation': return <String, Object?>{'receiptPath': '/tmp/consent.txt', 'links': <String, Object?>{}};
+    case 'getOwnershipLinks': return <String, Object?>{'Google FRP help': 'https://support.google.com/android/answer/9459346'};
+    case 'getDeviceIdentityForConsent': return <String, Object?>{'serial': 'R58N1', 'model': 'SM-A125F'};
     case 'pickUpdatePackage':
       return <String, Object?>{
         'cancelled': false,
