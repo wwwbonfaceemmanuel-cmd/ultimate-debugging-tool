@@ -381,7 +381,7 @@ Future<Object?> fakeNative(MethodCall call) async {
       ];
     case 'prepareFlashGuard': return 'Backup check OK';
     case 'recordFlashBackupNote': return <String, Object?>{'path': '/tmp/note.txt', 'bytes': 120};
-    case 'getSystemAppReport': return 'SYSTEM APP REPORT for ' + asText(args['packageName']);
+    case 'getSystemAppReport': return 'SYSTEM APP REPORT for ${asText(args['packageName'])}';
     case 'getLargeFilesReport': return 'LARGE FILES REPORT';
     case 'getExportChecklist': return 'EXPORT CHECKLIST';
     case 'getWifiHandoff': return 'WIFI HANDOFF';
