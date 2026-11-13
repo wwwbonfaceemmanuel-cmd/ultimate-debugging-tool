@@ -102,6 +102,14 @@ jobs:
             }
           fi
 
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: build-logs
+          path: /tmp/logs
+          if-no-files-found: warn
+
       - name: Upload APK
         uses: actions/upload-artifact@v6
         with:

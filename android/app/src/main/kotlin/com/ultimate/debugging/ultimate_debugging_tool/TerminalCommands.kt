@@ -246,6 +246,11 @@ object TerminalCommands {
         fixEntry("Network", "fix-network-select-auto", "settings put global network_preference auto 2>/dev/null; cmd phone set-network-selection-mode auto 2>/dev/null", "Auto network selection — helps foreign SIM re-register. Does not bypass SIM ME lock."),
         fixEntry("Network", "fix-carrier-config-reset", "cmd phone reset-carrier-config 2>/dev/null; settings delete global carrier_config_version 2>/dev/null", "Reset carrier config for new MCC/MNC. Reboot recommended."),
         fixEntry("Network", "fix-sim-refresh", "cmd phone refreshUicc 2>/dev/null || service call phone 5 2>/dev/null", "Refresh UICC/SIM — retries SIM after unlock code entered."),
+        fixEntry("Apps", "fix-virus-quarantine", "pm disable-user --user 0 %s; pm suspend %s 2>/dev/null", "Quarantine malware app (disable + suspend). Usage: fix-virus-quarantine <package>", Argument.PACKAGE, risk = "MEDIUM"),
+        fixEntry("Apps", "fix-virus-remove-admin", "dpm remove-active-admin %s 2>&1; cmd device_policy remove-active-admin %s 2>/dev/null", "Remove device admin so malware cannot lock. Usage: fix-virus-remove-admin <package>", Argument.PACKAGE, risk = "MEDIUM"),
+        fixEntry("System", "fix-universal-cache-preview", "dumpsys diskstats 2>&1 | head -n 40", "Preview cache sizes per app before clearing — universal fixer."),
+        fixEntry("System", "fix-duplicates", "find /sdcard -type f -size +10M -printf \"%s %p\\n\" 2>&1 | sort -n | head -n 40", "List dup candidates >10MB by size — universal fixer."),
+        fixEntry("System", "fix-boot-receivers", "cmd package query-receivers --components -a android.intent.action.BOOT_COMPLETED 2>&1 | head -n 60", "List startup auto-start receivers — universal fixer."),
         // Composite professional fixes
         fixEntry("System", "fix-slow-phone", "pm trim-caches 4096G; logcat -c; am kill-all; cmd package bg-dexopt-job 2>/dev/null", "All safe speed steps: clear caches, logs, background apps and recompile. Takes minutes.", timeoutMs = 900000L),
         fixEntry("System", "fix-notifications", "cmd appops reset 2>/dev/null; settings put global zen_mode 0; settings put global low_power 0; cmd notification set_dnd off 2>/dev/null", "Fix missing notifications: reset app access, DND off, battery saver off.", risk = "MEDIUM"),

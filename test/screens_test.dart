@@ -399,6 +399,11 @@ Future<Object?> fakeNative(MethodCall call) async {
     case 'getDeviceIdentityForConsent': return <String, Object?>{'serial': 'R58N1', 'model': 'SM-A125F'};
     case 'getSimLockReport': return 'SIM LOCK REPORT NETWORK_LOCKED';
     case 'generateUnlockPacket': return <String, Object?>{'packetPath': '/tmp/unlock.txt', 'imeiRedacted': '123456****', 'advice': 'Contact carrier'};
+    case 'getVirusScan': return 'VIRUS SCAN 0 threats';
+    case 'getVirusFindings': return <Object?>[];
+    case 'getDuplicateReport': return 'DUPLICATE REPORT';
+    case 'getStartupReport': return 'STARTUP REPORT';
+    case 'getSensorReport': return 'SENSOR REPORT';
     case 'pickUpdatePackage':
       return <String, Object?>{
         'cancelled': false,
