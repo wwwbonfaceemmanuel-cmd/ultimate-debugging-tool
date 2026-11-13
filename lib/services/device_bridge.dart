@@ -1280,6 +1280,48 @@ class DeviceBridge {
     return asMap(result);
   }
 
+  // ----- New technician engines -----
+  Future<String> getSystemAppReport(String packageName) async {
+    final r = await _channel.invokeMethod<dynamic>('getSystemAppReport', <String, dynamic>{'packageName': packageName});
+    return asText(r);
+  }
+  Future<String> getLargeFilesReport({int maxMb = 100}) async {
+    final r = await _channel.invokeMethod<dynamic>('getLargeFilesReport', <String, dynamic>{'maxMb': maxMb});
+    return asText(r);
+  }
+  Future<String> getExportChecklist() async {
+    final r = await _channel.invokeMethod<dynamic>('getExportChecklist');
+    return asText(r);
+  }
+  Future<String> getWifiHandoff() async {
+    final r = await _channel.invokeMethod<dynamic>('getWifiHandoff');
+    return asText(r);
+  }
+  Future<String> getNetworkLab({String host = 'google.com'}) async {
+    final r = await _channel.invokeMethod<dynamic>('getNetworkLab', <String, dynamic>{'host': host});
+    return asText(r);
+  }
+  Future<String> getAppOpsAudit({String? packageName}) async {
+    final r = await _channel.invokeMethod<dynamic>('getAppOpsAudit', <String, dynamic>{'packageName': packageName});
+    return asText(r);
+  }
+  Future<String> getThermalReport() async {
+    final r = await _channel.invokeMethod<dynamic>('getThermalReport');
+    return asText(r);
+  }
+  Future<String> verifyFirmwarePackage(String path, {String? sha256}) async {
+    final r = await _channel.invokeMethod<dynamic>('verifyFirmwarePackage', <String, dynamic>{'path': path, 'sha256': sha256});
+    return asText(r);
+  }
+  Future<String> prepareFlashGuard(String partition, String path) async {
+    final r = await _channel.invokeMethod<dynamic>('prepareFlashGuard', <String, dynamic>{'partition': partition, 'path': path});
+    return asText(r);
+  }
+  Future<Map<String, dynamic>> recordFlashBackupNote(String partition, String note) async {
+    final r = await _channel.invokeMethod<dynamic>('recordFlashBackupNote', <String, dynamic>{'partition': partition, 'note': note});
+    return asMap(r);
+  }
+
   Future<Map<String, dynamic>> recordOwnershipAttestation({
     required String technicianName,
     required bool ownerPresent,

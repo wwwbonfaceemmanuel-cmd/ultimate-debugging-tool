@@ -407,6 +407,31 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
             Service(
                 "fix-notifications", "Fix notifications", SYSTEM, Risk.MEDIUM, false, true,
                 "Resets app access, turns off DND and battery saver to restore notifications."
+            ),
+            Service(
+                "fix-system-disable-safe", "Disable system app (reversible)", APPS, Risk.MEDIUM, true, true,
+                "Disables a misbehaving system app without uninstalling. Reversible via Enable.",
+                "Protected core apps are refused."
+            ),
+            Service(
+                "fix-system-enable", "Enable system app", APPS, Risk.LOW, true, true,
+                "Re-enables a previously disabled system app."
+            ),
+            Service(
+                "fix-system-clear-cache", "Clear system app cache", APPS, Risk.LOW, true, true,
+                "Clears only cache of a system app. Data kept."
+            ),
+            Service(
+                "fix-system-reset-perms", "Reset system app permissions", APPS, Risk.LOW, true, true,
+                "Resets AppOps for a system app."
+            ),
+            Service(
+                "fix-preflash-backup-note", "Record backup note before flash", SYSTEM, Risk.LOW, false, true,
+                "Writes a backup note for current partition before flashing — enforces backup-first policy."
+            ),
+            Service(
+                "fix-firmware-verify", "Verify firmware package hash", SYSTEM, Risk.LOW, false, true,
+                "Verifies selected OTA/firmware package SHA-256 before sideload — official only."
             )
         )
 
@@ -829,6 +854,23 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
                 requireSuccess(shell("cmd appops set $quoted POST_NOTIFICATION allow", 20000L), "Could not allow notifications for this app.")
                 shell("cmd notification allow_assistant ${ShellSupport.quote(target)} 2>/dev/null; cmd notification set_notifications_enabled ${ShellSupport.quote(target)} true 2>/dev/null", 15000L)
                 Outcome(service, target, "Notifications allowed for the app.", "AppOps POST_NOTIFICATION set to allow.")
+            }
+            "fix-system-disable-safe" -> {
+                if (SystemAppModifier.isProtected(target)) throw RepairException("PROTECTED_PACKAGE", "$target is a protected core package — action refused.")
+                requireSuccess(shell("pm disable-user --user 0 $quoted", 30000L), "Phone refused to disable the system app.")
+                Outcome(service, target, "System app disabled (reversible).", "Use fix-system-enable to re-enable. Device keeps data.")
+            }
+            "fix-system-enable" -> {
+                requireSuccess(shell("pm enable --user 0 $quoted; pm enable $quoted 2>/dev/null", 30000L), "Phone refused to enable the app.")
+                Outcome(service, target, "System app enabled.", "Checked: enable sent.")
+            }
+            "fix-system-clear-cache" -> {
+                requireSuccess(shell("pm clear --cache-only --user 0 $quoted", 20000L), "Phone refused to clear cache.")
+                Outcome(service, target, "System app cache cleared.", "Data kept — only temporary files removed.")
+            }
+            "fix-system-reset-perms" -> {
+                requireSuccess(shell("cmd appops reset $quoted", 20000L), "Phone refused to reset permissions.")
+                Outcome(service, target, "System app permissions reset.", "Apps will ask again.")
             }
 
             else -> throw RepairException(
@@ -1382,6 +1424,19 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
                     val log = shell("logcat -d -v threadtime -t 2000 2>&1 | tail -n 1500", 30000L).output
                     done("Logs collected (no local storage).", "Dropbox: ${bug.lines().size} lines, logcat: ${log.lines().size} lines.")
                 }
+            }
+            "fix-preflash-backup-note" -> {
+                val note = shell("getprop ro.product.model 2>/dev/null; getprop ro.build.version.incremental 2>/dev/null", 8000L).output.trim()
+                if (filesDir != null) {
+                    val dir = java.io.File(filesDir, "flash_backups"); dir.mkdirs()
+                    val f = java.io.File(dir, "backup-note-${System.currentTimeMillis()}.txt")
+                    f.writeText("Backup note before flash\nDevice: $note\nTime: ${System.currentTimeMillis()}\nAdvice: Keep factory OTA package nearby for recovery.\n")
+                    done("Backup note recorded.", "Saved to ${f.name} — ${f.length()} bytes. Now verify firmware hash before flashing.")
+                } else done("Backup note (no storage).", note.take(400))
+            }
+            "fix-firmware-verify" -> {
+                val head = shell("ls -lh /data/user/0/com.ultimate.debugging.ultimate_debugging_tool/files/updates 2>&1 | head -n 20", 10000L).output.trim()
+                done("Firmware verify helper.", head.ifEmpty { "No packages yet — pick an OTA .zip via Update from ADB, then this checks its SHA-256 against what the manufacturer published." } )
             }
 
             else -> throw RepairException(

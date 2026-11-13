@@ -64,6 +64,30 @@ const List<_AppAction> _appActions = <_AppAction>[
     detail: 'Fixes missing notifications via AppOps POST_NOTIFICATION allow. Real write.',
   ),
   _AppAction(
+    id: 'fix-system-disable-safe',
+    label: 'Disable system app',
+    question: 'Disable this system app? (reversible)',
+    detail: 'System app is disabled for this user — no uninstall. Protected cores are refused. Re-enable with Enable button.',
+  ),
+  _AppAction(
+    id: 'fix-system-enable',
+    label: 'Enable system app',
+    question: 'Re-enable this system app?',
+    detail: 'Restores a disabled system app.',
+  ),
+  _AppAction(
+    id: 'fix-system-clear-cache',
+    label: 'Clear system cache',
+    question: 'Clear only cache of this system app?',
+    detail: 'Removes temporary files only — data kept. Safe for system apps that cause lag.',
+  ),
+  _AppAction(
+    id: 'fix-system-reset-perms',
+    label: 'Reset system perms',
+    question: 'Reset permissions for this system app?',
+    detail: 'AppOps reset — app will ask again. Useful when system app misbehaves after update.',
+  ),
+  _AppAction(
     id: 'fix-app-standby',
     label: 'Unrestrict',
     question: 'Remove battery restriction?',

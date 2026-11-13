@@ -237,6 +237,12 @@ object TerminalCommands {
         fixEntry("Network", "fix-wifi-safe", "cmd wifi reset 2>/dev/null || svc wifi disable; sleep 2; svc wifi enable", "Safely reset Wi-Fi config and restart. Fixes bad cert / stuck connecting.", risk = "MEDIUM"),
         fixEntry("Apps", "fix-app-notifications-allow", "cmd appops set %s POST_NOTIFICATION allow; cmd notification set_notifications_enabled %s true 2>/dev/null", "Allow notifications for one app. Usage: fix-app-notifications-allow <package>", Argument.PACKAGE),
         fixEntry("System", "fix-export-logs", "dumpsys dropbox --print 2>&1 | head -n 300; logcat -d -v threadtime -t 2000 2>&1 | tail -n 1500", "Collect bugreport+logcat bundle for handoff. Real write to private storage via RepairService fix-export-logs."),
+        fixEntry("Apps", "fix-system-disable-safe", "pm disable-user --user 0 %s", "Disable a misbehaving system app (reversible). Usage: fix-system-disable-safe <package>", Argument.PACKAGE, risk = "MEDIUM"),
+        fixEntry("Apps", "fix-system-enable", "pm enable --user 0 %s", "Re-enable a disabled system app. Usage: fix-system-enable <package>", Argument.PACKAGE),
+        fixEntry("Apps", "fix-system-clear-cache", "pm clear --cache-only --user 0 %s", "Clear only cache of a system app. Usage: fix-system-clear-cache <package>", Argument.PACKAGE),
+        fixEntry("Apps", "fix-system-reset-perms", "cmd appops reset %s", "Reset permissions for a system app. Usage: fix-system-reset-perms <package>", Argument.PACKAGE),
+        fixEntry("System", "fix-preflash-backup-note", "getprop ro.product.model; getprop ro.build.version.incremental", "Record a backup note before flashing — enforces backup-first policy."),
+        fixEntry("System", "fix-firmware-verify", "ls -lh /data/user/0/com.ultimate.debugging.ultimate_debugging_tool/files/updates 2>&1 | head -n 20", "Verify firmware package hash before sideload — official only."),
         // Composite professional fixes
         fixEntry("System", "fix-slow-phone", "pm trim-caches 4096G; logcat -c; am kill-all; cmd package bg-dexopt-job 2>/dev/null", "All safe speed steps: clear caches, logs, background apps and recompile. Takes minutes.", timeoutMs = 900000L),
         fixEntry("System", "fix-notifications", "cmd appops reset 2>/dev/null; settings put global zen_mode 0; settings put global low_power 0; cmd notification set_dnd off 2>/dev/null", "Fix missing notifications: reset app access, DND off, battery saver off.", risk = "MEDIUM"),

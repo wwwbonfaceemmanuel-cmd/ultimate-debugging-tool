@@ -455,6 +455,31 @@ class MainActivity : FlutterActivity() {
                     AppDiagnosis(session).inspect(packageName).toMap()
                 }
             }
+            "getSystemAppReport" -> {
+                val pkg = requireText(call, "packageName", "A package name is required.")
+                async(reply, "SYSTEM_APP_ERROR") { SystemAppModifier(session).report(pkg) }
+            }
+            "getLargeFilesReport" -> async(reply, "STORAGE_ERROR") { StorageInspector(session).largeFilesReport(call.argument<Number>("maxMb")?.toInt() ?: 100) }
+            "getExportChecklist" -> async(reply, "EXPORT_ERROR") { StorageInspector(session).exportChecklist() }
+            "getWifiHandoff" -> async(reply, "WIFI_HANDOFF_ERROR") { NetworkLab(session).wifiHandoff() }
+            "getNetworkLab" -> async(reply, "NETWORK_LAB_ERROR") { NetworkLab(session).dnsLab(call.argument<String>("host") ?: "google.com") }
+            "getAppOpsAudit" -> async(reply, "APPOPS_ERROR") { AppOpsInspector(session).audit(call.argument<String>("packageName")) }
+            "getThermalReport" -> async(reply, "THERMAL_ERROR") { ThermalLog(session).report() }
+            "verifyFirmwarePackage" -> {
+                val path = requireText(call, "path", "Firmware path required")
+                val sha = call.argument<String>("sha256")
+                async(reply, "FIRMWARE_VERIFY_ERROR") { FirmwareToolbox(session, filesDir).verifyPackage(path, sha) }
+            }
+            "prepareFlashGuard" -> {
+                val part = requireText(call, "partition", "Partition required")
+                val path = requireText(call, "path", "Image path required")
+                async(reply, "FLASH_GUARD_ERROR") { FirmwareToolbox(session, filesDir).prepareFlash(part, path) }
+            }
+            "recordFlashBackupNote" -> {
+                val part = requireText(call, "partition", "Partition required")
+                val note = call.argument<String>("note") ?: ""
+                async(reply, "FLASH_BACKUP_ERROR") { FirmwareToolbox(session, filesDir).recordBackupNote(part, note) }
+            }
 
             // ----- Files on the connected phone -----
 
