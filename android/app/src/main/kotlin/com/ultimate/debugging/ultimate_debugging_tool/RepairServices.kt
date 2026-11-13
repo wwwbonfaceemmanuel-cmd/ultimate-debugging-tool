@@ -381,7 +381,7 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
                 "Saved networks may need re-entered on some Android versions."
             ),
             Service(
-                "export-logs", "Export logs bundle", SYSTEM, Risk.LOW, false, true,
+                "fix-export-logs", "Export logs bundle", SYSTEM, Risk.LOW, false, true,
                 "Collects bugreport + logcat to private storage for technician handoff. Real write."
             ),
             Service(
@@ -1373,8 +1373,7 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
                 shell("cmd wifi reset 2>/dev/null || svc wifi disable; sleep 2; svc wifi enable; wpa_cli -i wlan0 reconfigure 2>/dev/null; settings put global wifi_scan_always_enabled 1", 30000L)
                 done("Wi-Fi config safely reset and restarted.", "Saved networks preserved where possible; bad cert cleared. Wi-Fi reconnecting...")
             }
-            "export-logs" -> {
-                // Real write: delegate to LogBundle when filesDir is available
+            "fix-export-logs" -> {
                 if (filesDir != null) {
                     val bundle = LogBundle(runner, java.io.File(filesDir, "log_bundles")).collect()
                     done("Logs written to private storage.", "Bugreport: ${bundle["bugreportPath"]} (${bundle["bugreportBytes"]} bytes), logcat: ${bundle["logcatBytes"]} bytes.")
