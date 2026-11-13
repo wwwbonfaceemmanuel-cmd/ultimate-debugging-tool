@@ -825,6 +825,11 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
                 requireSuccess(shell("cmd appops set $quoted RUN_IN_BACKGROUND allow", 30000L), "Phone refused to allow background.")
                 Outcome(service, target, "App allowed to run in background.", "Checked: RUN_IN_BACKGROUND = allow.")
             }
+            "fix-app-notifications-allow" -> {
+                requireSuccess(shell("cmd appops set $quoted POST_NOTIFICATION allow", 20000L), "Could not allow notifications for this app.")
+                shell("cmd notification allow_assistant ${ShellSupport.quote(target)} 2>/dev/null; cmd notification set_notifications_enabled ${ShellSupport.quote(target)} true 2>/dev/null", 15000L)
+                Outcome(service, target, "Notifications allowed for the app.", "AppOps POST_NOTIFICATION set to allow.")
+            }
 
             else -> throw RepairException(
                 "REPAIR_NOT_ALLOWED",
@@ -1363,13 +1368,6 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
                     shell("cmd phone reset-apn 2>/dev/null || settings put global preferred_apn_set 1", 20000L)
                 }
                 done("APNs reset to carrier defaults.", "APN delete/restore sent. Data should reconnect; reboot if not.")
-            }
-            "fix-app-notifications-allow" -> {
-                val quoted = ShellSupport.quote(target)
-                requireSuccess(shell("cmd appops set $quoted POST_NOTIFICATION allow", 20000L), "Could not allow notifications for this app.")
-                // also unblock via notification manager
-                shell("cmd notification allow_assistant ${ShellSupport.quote(target)} 2>/dev/null; cmd notification set_notifications_enabled ${ShellSupport.quote(target)} true 2>/dev/null", 15000L)
-                done("Notifications allowed for the app.", "AppOps POST_NOTIFICATION set to allow. Check app's notification toggle.")
             }
             "fix-wifi-safe" -> {
                 shell("cmd wifi reset 2>/dev/null || svc wifi disable; sleep 2; svc wifi enable; wpa_cli -i wlan0 reconfigure 2>/dev/null; settings put global wifi_scan_always_enabled 1", 30000L)

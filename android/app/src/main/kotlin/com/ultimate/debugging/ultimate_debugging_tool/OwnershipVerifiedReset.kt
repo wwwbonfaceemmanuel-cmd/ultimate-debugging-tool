@@ -55,7 +55,7 @@ class OwnershipVerifiedReset(
     @Throws(IOException::class)
     fun recordAttestation(attestation: Attestation): Map<String, Any?> {
         val error = validateAttestation(attestation)
-        if (error != null) throw RepairException("ATTESTATION_INVALID", error)
+        if (error != null) throw RepairServices.RepairException("ATTESTATION_INVALID", error)
 
         // Collect device identity for the consent receipt
         val imei = runner.shell("service call iphonesubinfo 1 2>/dev/null | cut -c 52-66 | tr -d '.[:space:]' 2>/dev/null", 8000L).output.trim()
