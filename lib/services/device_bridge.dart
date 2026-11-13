@@ -923,6 +923,7 @@ class DeviceBridge {
   void start() {
     if (_subscription != null) return;
 
+    // ignore: cancel_subscriptions - stored in _subscription and cancelled in dispose()
     _subscription = _events.receiveBroadcastStream().listen(
       _onEvent,
       onError: (Object error) {
@@ -931,6 +932,14 @@ class DeviceBridge {
     );
 
     unawaited(refreshStatus());
+  }
+
+  /// Releases native event resources. Called on app teardown / tests.
+  void dispose() {
+    unawaited(_subscription?.cancel());
+    _subscription = null;
+    // StreamControllers are long-lived singletons for the app lifecycle;
+    // closing them would break ValueNotifiers still in use.
   }
 
   void _onEvent(dynamic raw) {
