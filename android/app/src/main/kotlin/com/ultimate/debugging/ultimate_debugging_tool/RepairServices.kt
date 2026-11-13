@@ -432,6 +432,18 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
             Service(
                 "fix-firmware-verify", "Verify firmware package hash", SYSTEM, Risk.LOW, false, true,
                 "Verifies selected OTA/firmware package SHA-256 before sideload — official only."
+            ),
+            Service(
+                "fix-network-select-auto", "Auto network selection", NETWORK, Risk.LOW, false, true,
+                "Sets network selection to auto — helps foreign SIM re-register. Does not bypass SIM ME lock."
+            ),
+            Service(
+                "fix-carrier-config-reset", "Reset carrier config", NETWORK, Risk.LOW, false, true,
+                "Resets carrier config for new MCC/MNC. Reboot recommended."
+            ),
+            Service(
+                "fix-sim-refresh", "Refresh SIM (UICC)", NETWORK, Risk.LOW, false, true,
+                "Sends UICC refresh — retries SIM after carrier unlock code entered."
             )
         )
 
@@ -1437,6 +1449,18 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
             "fix-firmware-verify" -> {
                 val head = shell("ls -lh /data/user/0/com.ultimate.debugging.ultimate_debugging_tool/files/updates 2>&1 | head -n 20", 10000L).output.trim()
                 done("Firmware verify helper.", head.ifEmpty { "No packages yet — pick an OTA .zip via Update from ADB, then this checks its SHA-256 against what the manufacturer published." } )
+            }
+            "fix-network-select-auto" -> {
+                shell("settings put global network_preference auto 2>/dev/null; cmd phone set-network-selection-mode auto 2>/dev/null")
+                done("Network selection set to auto.", "Phone will re-search carrier. Allow 1 min for foreign SIM to register.")
+            }
+            "fix-carrier-config-reset" -> {
+                shell("cmd phone reset-carrier-config 2>/dev/null; settings delete global carrier_config_version 2>/dev/null")
+                done("Carrier config reset.", "Reboot may be needed for new MCC/MNC to apply.")
+            }
+            "fix-sim-refresh" -> {
+                shell("cmd phone refreshUicc 2>/dev/null || service call phone 5 2>/dev/null")
+                done("UICC/SIM refresh sent.", "If SIM ME lock persists, phone still needs carrier unlock code — not bypassed.")
             }
 
             else -> throw RepairException(

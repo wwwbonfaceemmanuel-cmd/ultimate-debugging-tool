@@ -480,6 +480,8 @@ class MainActivity : FlutterActivity() {
                 val note = call.argument<String>("note") ?: ""
                 async(reply, "FLASH_BACKUP_ERROR") { FirmwareToolbox(session, filesDir).recordBackupNote(part, note) }
             }
+            "getSimLockReport" -> async(reply, "SIM_LOCK_ERROR") { SimNetworkInspector(session, filesDir).simLockReport() }
+            "generateUnlockPacket" -> async(reply, "UNLOCK_PACKET_ERROR") { SimNetworkInspector(session, filesDir).generateUnlockPacket() }
 
             // ----- Files on the connected phone -----
 
