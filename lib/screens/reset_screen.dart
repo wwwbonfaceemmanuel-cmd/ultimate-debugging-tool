@@ -209,27 +209,107 @@ class _ResetScreenState extends State<ResetScreen> {
               ],
               const SectionTitle('Ownership verification (for customer-brought phones)'),
               Panel(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Text('For any phone with FRP/lock, verify ownership before helping. This tool never bypasses locks — it only records that you checked.', style: TextStyle(color: Colors.white70, height: 1.35)),
-                  const SizedBox(height: 10),
-                  TextField(controller: _techCtrl, decoration: const InputDecoration(labelText: 'Technician name', border: OutlineInputBorder()), style: const TextStyle(color: Colors.white)),
-                  const SizedBox(height: 8),
-                  CheckboxListTile(value: _ownerPresent, onChanged: (v) => setState(() => _ownerPresent = v == true), title: const Text('Owner is present in person', style: TextStyle(color: Colors.white70, fontSize: 13)), contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading),
-                  CheckboxListTile(value: _idChecked, onChanged: (v) => setState(() => _idChecked = v == true), title: const Text('Government ID checked', style: TextStyle(color: Colors.white70, fontSize: 13)), contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading),
-                  CheckboxListTile(value: _receiptChecked, onChanged: (v) => setState(() => _receiptChecked = v == true), title: const Text('Purchase receipt / box IMEI matches', style: TextStyle(color: Colors.white70, fontSize: 13)), contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading),
-                  TextField(controller: _notesCtrl, decoration: const InputDecoration(labelText: 'Notes (optional)', border: OutlineInputBorder()), style: const TextStyle(color: Colors.white), maxLines: 2),
-                  const SizedBox(height: 10),
-                  FilledButton.icon(onPressed: _attesting ? null : _recordAttestation, icon: _attesting ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.verified_user), label: const Text('Record attestation (writes consent file)')),
-                  if (_attestationResult.isNotEmpty) ...[const SizedBox(height: 8), ReportView(_attestationResult)],
-                  const SizedBox(height: 8),
-                  const Text('Refused by this tool: flash frp partition, remove locksettings.db, bypass gatekeeper, patch SetupWizard. Guide owner to official account recovery instead.', style: TextStyle(color: AppColors.danger, fontSize: 12, height: 1.35)),
-                  const SizedBox(height: 6),
-                  Wrap(spacing: 8, children: [
-                    Tag('Google FRP help', color: AppColors.info),
-                    Tag('Samsung Find My Mobile', color: AppColors.info),
-                    Tag('Mi Account unlock', color: AppColors.info),
-                  ]),
-                ]),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'For any phone with FRP/lock, verify ownership before helping. This tool never bypasses locks — it only records that you checked.',
+                      style: TextStyle(color: Colors.white70, height: 1.35),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _techCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Technician name',
+                        border: OutlineInputBorder(),
+                      ),
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    const SizedBox(height: 8),
+                    Material(
+                      type: MaterialType.transparency,
+                      child: CheckboxListTile(
+                        value: _ownerPresent,
+                        onChanged: (v) => setState(() => _ownerPresent = v == true),
+                        title: const Text(
+                          'Owner is present in person',
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                    ),
+                    Material(
+                      type: MaterialType.transparency,
+                      child: CheckboxListTile(
+                        value: _idChecked,
+                        onChanged: (v) => setState(() => _idChecked = v == true),
+                        title: const Text(
+                          'Government ID checked',
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                    ),
+                    Material(
+                      type: MaterialType.transparency,
+                      child: CheckboxListTile(
+                        value: _receiptChecked,
+                        onChanged: (v) => setState(() => _receiptChecked = v == true),
+                        title: const Text(
+                          'Purchase receipt / box IMEI matches',
+                          style: TextStyle(color: Colors.white70, fontSize: 13),
+                        ),
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                      ),
+                    ),
+                    TextField(
+                      controller: _notesCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Notes (optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                      style: const TextStyle(color: Colors.white),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton.icon(
+                      onPressed: _attesting ? null : _recordAttestation,
+                      icon: _attesting
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.verified_user),
+                      label: const Text('Record attestation (writes consent file)'),
+                    ),
+                    if (_attestationResult.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      ReportView(_attestationResult),
+                    ],
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Refused by this tool: flash frp partition, remove locksettings.db, bypass gatekeeper, patch SetupWizard. Guide owner to official account recovery instead.',
+                      style: TextStyle(
+                        color: AppColors.danger,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Wrap(
+                      spacing: 8,
+                      children: [
+                        Tag('Google FRP help', color: AppColors.info),
+                        Tag('Samsung Find My Mobile', color: AppColors.info),
+                        Tag('Mi Account unlock', color: AppColors.info),
+                      ],
+                    ),
+                  ],
+                ),
               ),
               const SectionTitle('Step 1: the owner agrees'),
               Panel(
