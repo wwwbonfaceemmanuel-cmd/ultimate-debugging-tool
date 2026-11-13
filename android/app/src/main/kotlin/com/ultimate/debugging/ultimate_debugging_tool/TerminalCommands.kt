@@ -1,10 +1,17 @@
 package com.ultimate.debugging.ultimate_debugging_tool
 
 /**
- * The fixed list of commands the terminal may run on the target phone.
+ * The fixed lists of commands the terminal may run on the target phone.
  *
- * Every entry only reads information. Free-form shell input is never
- * passed to the phone; a command either matches this list or is refused.
+ * Two lists, kept strictly apart:
+ *  - [catalog] only reads information. It can never change the phone.
+ *  - [fixCatalog] really changes the phone (restarts radios, resets
+ *    settings, clears caches, stops apps, reboots). A fix command only
+ *    runs after the technician confirms it in the app, and every fix
+ *    run is written to the service history.
+ *
+ * Free-form shell input is never passed to the phone; a command either
+ * matches one of these lists or is refused.
  */
 object TerminalCommands {
 
@@ -16,7 +23,11 @@ object TerminalCommands {
         val description: String,
         val group: String,
         val argument: Argument = Argument.NONE,
-        val timeoutMs: Long = 30000L
+        val timeoutMs: Long = 30000L,
+        /** LOW, MEDIUM or HIGH. HIGH means data loss or a restart. */
+        val risk: String = "LOW",
+        /** True for commands that change the phone. */
+        val isFix: Boolean = false
     )
 
     class Resolved(val entry: Entry, val shell: String)
@@ -31,6 +42,16 @@ object TerminalCommands {
         argument: Argument = Argument.NONE,
         timeoutMs: Long = 30000L
     ) = Entry(name, shell, description, group, argument, timeoutMs)
+
+    private fun fixEntry(
+        group: String,
+        name: String,
+        shell: String,
+        description: String,
+        argument: Argument = Argument.NONE,
+        timeoutMs: Long = 30000L,
+        risk: String = "LOW"
+    ) = Entry(name, shell, description, group, argument, timeoutMs, risk, true)
 
     val catalog: List<Entry> = listOf(
         // Identity
@@ -129,38 +150,120 @@ object TerminalCommands {
         entry("Settings", "default-keyboard", "settings get secure default_input_method", "Show the active keyboard app.")
     )
 
+    /**
+     * Commands that really change the phone. Every one of these needs an
+     * explicit confirmation in the app before it runs, and the run is
+     * recorded in the service history. Nothing here removes a screen
+     * lock, bypasses an account lock, or flashes firmware.
+     */
+    val fixCatalog: List<Entry> = listOf(
+        // Network fixes
+        fixEntry("Network", "fix-wifi", "svc wifi disable; sleep 3; svc wifi enable", "Restart Wi-Fi. Fixes a stuck or dropped Wi-Fi connection."),
+        fixEntry("Network", "fix-mobile-data", "svc data disable; sleep 3; svc data enable", "Restart mobile data."),
+        fixEntry("Network", "fix-bluetooth", "svc bluetooth disable 2>/dev/null || cmd bluetooth_manager disable; sleep 3; svc bluetooth enable 2>/dev/null || cmd bluetooth_manager enable", "Restart Bluetooth. Fixes pairing and audio dropouts."),
+        fixEntry("Network", "fix-network", "svc wifi disable; svc data disable; sleep 3; svc wifi enable; svc data enable", "Restart Wi-Fi and mobile data together."),
+        fixEntry("Network", "fix-airplane", "cmd connectivity airplane-mode enable; sleep 5; cmd connectivity airplane-mode disable", "Cycle airplane mode so the phone re-registers on its networks."),
+        fixEntry("Network", "fix-dns", "settings put global private_dns_mode opportunistic", "Set Private DNS back to Automatic. Fixes 'connected but no internet' from a bad DNS provider."),
+        fixEntry("Network", "fix-proxy", "settings put global http_proxy :0; settings delete global global_http_proxy_host; settings delete global global_http_proxy_port; settings delete global global_http_proxy_exclusion_list", "Remove a leftover global proxy that blocks internet access."),
+        fixEntry("Network", "fix-time", "settings put global auto_time 1; settings put global auto_time_zone 1", "Turn on automatic date, time and time zone. A wrong date breaks secure websites and apps."),
+
+        // Storage and performance fixes
+        fixEntry("Storage", "fix-caches", "pm trim-caches 4096G", "Delete temporary cache files of all apps. No personal data is removed.", timeoutMs = 180000L),
+        fixEntry("Storage", "fix-storage", "sm idle-maint run 2>&1 || sm fstrim 2>&1", "Run Android storage maintenance (TRIM). Can restore speed on a slow, full phone.", timeoutMs = 300000L),
+        fixEntry("Storage", "fix-logs", "logcat -c", "Empty the log buffers so a new fault can be captured cleanly."),
+        fixEntry("Storage", "fix-optimize", "cmd package bg-dexopt-job", "Recompile installed apps for speed, as Android does overnight. Can take several minutes.", timeoutMs = 900000L),
+        fixEntry("Storage", "fix-kill-apps", "am kill-all", "Stop every background app. Frees memory on a slow phone; apps reopen when needed."),
+
+        // Power fixes
+        fixEntry("Power", "fix-battery-stats", "dumpsys batterystats --reset", "Clear battery usage history so a fresh measurement can start. Does not change the battery."),
+        fixEntry("Power", "fix-battery-test", "dumpsys battery reset", "Remove fake battery readings left by a test tool."),
+        fixEntry("Power", "fix-battery-saver-off", "settings put global low_power 0", "Turn Battery Saver off."),
+        fixEntry("Power", "fix-battery-saver-on", "settings put global low_power 1", "Turn Battery Saver on."),
+
+        // Display fixes
+        fixEntry("Display", "fix-display", "wm size reset; wm density reset", "Return screen size and density to factory values. Fixes a tiny, huge or cut-off screen."),
+        fixEntry("Display", "fix-animations", "settings put global window_animation_scale 1; settings put global transition_animation_scale 1; settings put global animator_duration_scale 1", "Return animation speeds to normal (1x)."),
+        fixEntry("Display", "fix-rotate", "settings put system accelerometer_rotation 1", "Turn auto-rotate back on."),
+        fixEntry("Display", "fix-screen-timeout", "settings put system screen_off_timeout 30000", "Return the screen timeout to 30 seconds."),
+        fixEntry("Display", "fix-brightness-auto", "settings put system screen_brightness_mode 1", "Turn adaptive (auto) brightness back on."),
+        fixEntry("Display", "fix-font-scale", "settings put system font_scale 1.0", "Return the text size to normal (1.0)."),
+
+        // System fixes
+        fixEntry("System", "fix-system-ui", "am force-stop com.android.systemui || am crash com.android.systemui", "Restart the status bar, navigation and lock screen when they are frozen. The screen may flicker.", risk = "MEDIUM"),
+        fixEntry("System", "fix-stay-awake-on", "svc power stayon usb", "Keep the screen on while USB power is connected (for servicing)."),
+        fixEntry("System", "fix-stay-awake-off", "svc power stayon false", "Return the screen timeout to normal after servicing."),
+
+        // App fixes
+        fixEntry("Apps", "fix-app-stop", "am force-stop --user 0 %s", "Stop one app. Usage: fix-app-stop <package>", Argument.PACKAGE),
+        fixEntry("Apps", "fix-app-restart", "am force-stop --user 0 %s; monkey -p %s -c android.intent.category.LAUNCHER 1", "Stop one app and open it again. Usage: fix-app-restart <package>", Argument.PACKAGE),
+        fixEntry("Apps", "fix-app-enable", "pm enable --user 0 %s", "Switch a disabled app back on. Usage: fix-app-enable <package>", Argument.PACKAGE),
+        fixEntry("Apps", "fix-app-disable", "pm disable-user --user 0 %s", "Switch one app off without uninstalling it. Usage: fix-app-disable <package>", Argument.PACKAGE, risk = "MEDIUM"),
+        fixEntry("Apps", "fix-app-cache", "pm clear --cache-only --user 0 %s", "Delete only the temporary cache of one app. Usage: fix-app-cache <package>", Argument.PACKAGE),
+        fixEntry("Apps", "fix-app-data", "pm clear --user 0 %s", "Erase one app's data and return it to a fresh install. Usage: fix-app-data <package>. The app is signed out and its data is lost.", Argument.PACKAGE, risk = "HIGH"),
+        fixEntry("Apps", "fix-app-permissions", "pm reset-permissions", "Return every app's permissions to their defaults. Apps will ask again when needed.", risk = "MEDIUM"),
+        fixEntry("Apps", "fix-appops", "cmd appops reset", "Reset every app's special access (background, notifications, overlays) to its default.", risk = "MEDIUM"),
+
+        // Restart fixes
+        fixEntry("Restart", "reboot", "reboot", "Restart Android normally. The ADB session ends.", risk = "MEDIUM"),
+        fixEntry("Restart", "reboot-recovery", "reboot recovery", "Restart into the recovery menu. Nothing is erased unless you choose it there.", risk = "MEDIUM"),
+        fixEntry("Restart", "reboot-bootloader", "reboot bootloader", "Restart into bootloader / download mode for firmware work.", risk = "MEDIUM")
+    )
+
     private val byName: Map<String, Entry> = catalog.associateBy { it.name }
+
+    private val fixByName: Map<String, Entry> = fixCatalog.associateBy { it.name }
 
     // Longest names first so "pm list packages" wins over a shorter prefix.
     private val namesByLength: List<String> =
         catalog.map { it.name }.sortedByDescending { it.length }
 
+    private val fixNamesByLength: List<String> =
+        fixCatalog.map { it.name }.sortedByDescending { it.length }
+
     /**
-     * Matches technician input against the catalog.
+     * Matches technician input against the read-only catalog.
      * The command name is case-insensitive; an argument is validated and
      * quoted before it is placed into the shell command.
      */
     @Throws(Rejected::class)
-    fun resolve(input: String): Resolved {
+    fun resolve(input: String): Resolved =
+        resolveAgainst(input, byName, namesByLength, "read")
+
+    /**
+     * Matches technician input against the fix catalog. Fix commands are
+     * never accepted by [resolve], so a read-only request can never
+     * change the phone by accident.
+     */
+    @Throws(Rejected::class)
+    fun resolveFix(input: String): Resolved =
+        resolveAgainst(input, fixByName, fixNamesByLength, "fix")
+
+    @Throws(Rejected::class)
+    private fun resolveAgainst(
+        input: String,
+        table: Map<String, Entry>,
+        names: List<String>,
+        kind: String
+    ): Resolved {
         val trimmed = input.trim().replace(Regex("\\s+"), " ")
 
         if (trimmed.isEmpty()) throw Rejected("Enter a command first.")
 
         val lower = trimmed.lowercase()
 
-        byName[lower]?.let { exact ->
+        table[lower]?.let { exact ->
             if (exact.argument != Argument.NONE) {
                 throw Rejected(exact.description)
             }
             return Resolved(exact, exact.shell)
         }
 
-        val name = namesByLength.firstOrNull { lower.startsWith("$it ") }
+        val name = names.firstOrNull { lower.startsWith("$it ") }
             ?: throw Rejected(
                 "Command not supported. Type help to see available commands."
             )
 
-        val entry = byName.getValue(name)
+        val entry = table.getValue(name)
         val argument = trimmed.substring(name.length).trim()
 
         return when (entry.argument) {
@@ -193,7 +296,7 @@ object TerminalCommands {
         appendLine("ULTIMATE DEBUGGING TOOL")
         appendLine(if (rootMode) "ROOT MODE" else "ADB MODE")
         appendLine()
-        appendLine("Commands run on the CONNECTED phone and only read information.")
+        appendLine("READ COMMANDS (only read information):")
 
         for ((group, entries) in catalog.groupBy { it.group }) {
             appendLine()
@@ -204,17 +307,33 @@ object TerminalCommands {
         }
 
         appendLine()
-        appendLine("To change something on the phone, use Repair Tools.")
+        appendLine("FIX COMMANDS (change the phone; each one asks first):")
+
+        for ((group, entries) in fixCatalog.groupBy { it.group }) {
+            appendLine()
+            appendLine(group.uppercase())
+            entries.forEach {
+                appendLine("${it.name.padEnd(23)} - ${it.description}")
+            }
+        }
+
+        appendLine()
+        appendLine("Fix commands are also available as guided services in Repair Tools.")
         append("Some results depend on Android version and manufacturer.")
     }
 
-    /** Catalog in a form the app screens can show as suggestions. */
-    fun describe(): List<Map<String, Any>> = catalog.map {
-        mapOf(
-            "name" to it.name,
-            "description" to it.description,
-            "group" to it.group,
-            "needsArgument" to (it.argument != Argument.NONE)
-        )
-    }
+    /** Read-only catalog in a form the app screens can show. */
+    fun describe(): List<Map<String, Any>> = catalog.map { describeEntry(it) }
+
+    /** Fix catalog in a form the app screens can show. */
+    fun describeFixes(): List<Map<String, Any>> = fixCatalog.map { describeEntry(it) }
+
+    private fun describeEntry(entry: Entry): Map<String, Any> = mapOf(
+        "name" to entry.name,
+        "description" to entry.description,
+        "group" to entry.group,
+        "needsArgument" to (entry.argument != Argument.NONE),
+        "risk" to entry.risk,
+        "isFix" to entry.isFix
+    )
 }

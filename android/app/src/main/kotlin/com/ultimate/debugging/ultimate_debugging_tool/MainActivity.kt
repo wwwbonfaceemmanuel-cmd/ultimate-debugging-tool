@@ -365,13 +365,23 @@ class MainActivity : FlutterActivity() {
                 HardwareInspector(session).run().toMap()
             }
 
+            "runServiceDiagnosis" -> async(reply, "SERVICE_DIAGNOSIS_ERROR") {
+                ServiceDiagnosis(session).run().toMap()
+            }
+
             // ----- Terminal -----
 
             "getTerminalCommands" -> reply.success(TerminalCommands.describe())
 
+            "getTerminalFixCommands" -> reply.success(TerminalCommands.describeFixes())
+
             "executeAdbCommand" -> executeTerminalCommand(call, reply, rootMode = false)
 
             "executeRootCommand" -> executeTerminalCommand(call, reply, rootMode = true)
+
+            "executeFixCommand" -> executeFixCommand(call, reply, rootMode = false)
+
+            "executeRootFixCommand" -> executeFixCommand(call, reply, rootMode = true)
 
             // ----- Repair -----
 
@@ -1110,6 +1120,71 @@ class MainActivity : FlutterActivity() {
                     append("\n\n(Output shortened: only the first 1 MB is shown.)")
                 }
 
+                if (result.exitCode != null && result.exitCode != 0) {
+                    if (isNotEmpty()) append("\n\n")
+                    append("Exit code: ").append(result.exitCode)
+                }
+            }.ifBlank { "Command completed without output." }
+        }
+    }
+
+    private fun executeFixCommand(call: MethodCall, reply: Reply, rootMode: Boolean) {
+        val input = call.argument<String>("command")?.trim().orEmpty()
+        val confirmed = call.argument<Boolean>("confirmed") == true
+
+        if (!confirmed) {
+            reply.error(
+                "CONFIRMATION_REQUIRED",
+                "This command changes the connected phone. Confirm it first.",
+                null
+            )
+            return
+        }
+
+        if (input.equals("help", ignoreCase = true)) {
+            reply.success(TerminalCommands.helpText(rootMode))
+            return
+        }
+
+        async(reply, "TERMINAL_EXECUTION_ERROR") {
+            val resolved = TerminalCommands.resolveFix(input)
+
+            if (rootMode) {
+                val check = session.shell(TerminalCommands.asRoot("id"), 20000L)
+                if (!check.output.contains("uid=0")) {
+                    throw RequestError(
+                        "ROOT_UNAVAILABLE",
+                        "Root access was not granted. This device may not be rooted, " +
+                            "or the root permission request was denied."
+                    )
+                }
+            }
+
+            val shellCommand = if (rootMode) TerminalCommands.asRoot(resolved.shell) else resolved.shell
+            val result = session.shell(shellCommand, resolved.entry.timeoutMs, 1024 * 1024)
+
+            // Record the fix in history — every change is auditable.
+            if (session.snapshot().connected) {
+                try {
+                    recordRepair(
+                        session.snapshot(),
+                        "Terminal fix: ${resolved.entry.name}",
+                        null,
+                        if (result.exitCode == null || result.exitCode == 0) "Completed" else "Completed with warnings",
+                        "${resolved.entry.description}\n${result.output.trim().take(800)}"
+                    )
+                } catch (_: Exception) {}
+            }
+
+            buildString {
+                append(result.output.trimEnd())
+                if (result.errorOutput.isNotBlank()) {
+                    if (isNotEmpty()) append("\n")
+                    append("ERROR:\n").append(result.errorOutput.trimEnd())
+                }
+                if (result.truncated) {
+                    append("\n\n(Output shortened: only the first 1 MB is shown.)")
+                }
                 if (result.exitCode != null && result.exitCode != 0) {
                     if (isNotEmpty()) append("\n\n")
                     append("Exit code: ").append(result.exitCode)

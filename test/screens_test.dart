@@ -11,6 +11,7 @@ import 'package:ultimate_debugging_tool/screens/app_workbench_screen.dart';
 import 'package:ultimate_debugging_tool/screens/bootloader_screen.dart';
 import 'package:ultimate_debugging_tool/screens/command_terminal_screen.dart';
 import 'package:ultimate_debugging_tool/screens/connection_screen.dart';
+import 'package:ultimate_debugging_tool/screens/debugging_service_screen.dart';
 import 'package:ultimate_debugging_tool/screens/diagnostics_screen.dart';
 import 'package:ultimate_debugging_tool/screens/file_manager_screen.dart';
 import 'package:ultimate_debugging_tool/screens/hardware_check_screen.dart';
@@ -264,6 +265,17 @@ Future<Object?> fakeNative(MethodCall call) async {
           'needsArgument': true,
         },
       ];
+    case 'getTerminalFixCommands':
+      return <Object?>[
+        <String, Object?>{
+          'name': 'fix-caches',
+          'description': 'Delete temporary cache files',
+          'group': 'Storage',
+          'needsArgument': false,
+          'risk': 'LOW',
+          'isFix': true,
+        },
+      ];
     case 'executeAdbCommand':
       if (args['command'] != 'device-info') {
         throw PlatformException(
@@ -272,6 +284,51 @@ Future<Object?> fakeNative(MethodCall call) async {
         );
       }
       return 'model: SM-A125F';
+    case 'executeFixCommand':
+    case 'executeRootFixCommand':
+      return 'Fix completed.';
+    case 'runServiceDiagnosis':
+      return <String, Object?>{
+        'score': 78,
+        'verdict': 'Needs attention',
+        'summary': '5 checks, 2 needing attention (1 faults).',
+        'faultCount': 1,
+        'attentionCount': 2,
+        'fixableCount': 1,
+        'report': 'SERVICE DIAGNOSIS\\nScore: 78',
+        'checks': <Object?>[
+          <String, Object?>{
+            'id': 'storage',
+            'title': 'Storage',
+            'status': 'WARNING',
+            'detail': 'Storage is nearly full.',
+            'evidence': 'Free: 1.2 GB',
+            'fixId': 'free-storage',
+            'fixTitle': 'Free up storage',
+            'autoFixable': true,
+          },
+          <String, Object?>{
+            'id': 'internet',
+            'title': 'Internet connection',
+            'status': 'FAULT',
+            'detail': 'No internet.',
+            'evidence': 'Ping: no reply',
+            'fixId': 'fix-no-internet',
+            'fixTitle': 'Fix internet',
+            'autoFixable': true,
+          },
+          <String, Object?>{
+            'id': 'memory',
+            'title': 'Memory',
+            'status': 'OK',
+            'detail': 'Memory is within normal range.',
+            'evidence': 'Available: 2 GB',
+            'fixId': null,
+            'fixTitle': '',
+            'autoFixable': false,
+          },
+        ],
+      };
     case 'getRepairCatalog':
       return <Object?>[
         <String, Object?>{
@@ -999,6 +1056,41 @@ void main() {
 
     expect(find.text('Connect the phone in recovery'), findsOneWidget);
     expect(called('pickUpdatePackage'), isFalse);
+
+    await finish(tester);
+  });
+
+  testWidgets('debugging service diagnoses and offers fixes', (tester) async {
+    connectPhone();
+    await showTall(tester, const DebuggingServiceScreen());
+
+    expect(called('runServiceDiagnosis'), isTrue);
+    expect(find.text('Needs attention'), findsOneWidget);
+    expect(find.text('Storage'), findsOneWidget);
+    expect(find.textContaining('Fix:'), findsWidgets);
+
+    await finish(tester);
+  });
+
+  testWidgets('debugging service needs a phone first', (tester) async {
+    await show(tester, const DebuggingServiceScreen());
+
+    expect(find.text('Connect a phone first'), findsOneWidget);
+    expect(called('runServiceDiagnosis'), isFalse);
+
+    await finish(tester);
+  });
+
+  testWidgets('terminal shows fix commands alongside read commands',
+      (tester) async {
+    connectPhone();
+    await show(tester, const CommandTerminalScreen());
+
+    expect(called('getTerminalFixCommands'), isTrue);
+    await tester.tap(find.byIcon(Icons.list_alt));
+    await settle(tester);
+    expect(find.text('Read'), findsOneWidget);
+    expect(find.text('Fix'), findsOneWidget);
 
     await finish(tester);
   });

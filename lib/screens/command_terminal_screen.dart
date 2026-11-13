@@ -41,8 +41,11 @@ class _CommandTerminalScreenState extends State<CommandTerminalScreen> {
   final List<String> _recent = <String>[];
 
   List<TerminalCommandInfo> _commands = const <TerminalCommandInfo>[];
+  List<TerminalCommandInfo> _fixCommands = const <TerminalCommandInfo>[];
   bool _rootMode = false;
   bool _running = false;
+
+  List<TerminalCommandInfo> get _allCommands => [..._commands, ..._fixCommands];
 
   @override
   void initState() {
@@ -68,8 +71,12 @@ class _CommandTerminalScreenState extends State<CommandTerminalScreen> {
   Future<void> _loadCommands() async {
     try {
       final commands = await _bridge.getTerminalCommands();
+      final fixes = await _bridge.getTerminalFixCommands();
       if (!mounted) return;
-      setState(() => _commands = commands);
+      setState(() {
+        _commands = commands;
+        _fixCommands = fixes;
+      });
     } catch (error) {
       if (!mounted) return;
       showMessage(context, describeError(error), error: true);
@@ -83,7 +90,7 @@ class _CommandTerminalScreenState extends State<CommandTerminalScreen> {
     final firstWord = typed.split(' ').first;
     final matches = <TerminalCommandInfo>[];
 
-    for (final command in _commands) {
+    for (final command in _allCommands) {
       if (command.name == typed) continue;
       if (command.name.startsWith(firstWord) ||
           (firstWord.length >= 3 && command.name.contains(firstWord))) {
@@ -93,6 +100,36 @@ class _CommandTerminalScreenState extends State<CommandTerminalScreen> {
     }
 
     return matches;
+  }
+
+  bool _isFixCommand(String input) {
+    final lower = input.trim().toLowerCase().split(' ').first;
+    // Also handle multi-word names by longest-first match.
+    final names = _fixCommands.map((e) => e.name.toLowerCase()).toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    for (final n in names) {
+      if (lower == n || input.trim().toLowerCase().startsWith('$n ') || input.trim().toLowerCase() == n) return true;
+    }
+    // Fallback: check if name with spaces matches start
+    for (final c in _fixCommands) {
+      if (input.trim().toLowerCase() == c.name.toLowerCase() ||
+          input.trim().toLowerCase().startsWith('${c.name.toLowerCase()} ')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  TerminalCommandInfo? _findFixInfo(String input) {
+    final lower = input.trim().toLowerCase();
+    TerminalCommandInfo? best;
+    for (final c in _fixCommands) {
+      final n = c.name.toLowerCase();
+      if (lower == n || lower.startsWith('$n ')) {
+        if (best == null || n.length > best.name.length) best = c;
+      }
+    }
+    return best;
   }
 
   void _choose(TerminalCommandInfo command) {
@@ -120,7 +157,24 @@ class _CommandTerminalScreenState extends State<CommandTerminalScreen> {
       return;
     }
 
+    // Fix commands change the phone — confirm first.
+    if (_isFixCommand(command)) {
+      final info = _findFixInfo(command);
+      final dangerous = info?.risk == 'HIGH';
+      final confirmed = await confirmAction(
+        context,
+        title: 'Run fix: ${info?.name ?? command}?',
+        message:
+            '${info?.description ?? 'This command changes the connected phone.'}\n\n'
+            'It runs on the CONNECTED phone, not this one. Every fix is logged.',
+        confirmLabel: 'Run fix',
+        dangerous: dangerous,
+      );
+      if (!confirmed) return;
+    }
+
     final rootMode = _rootMode;
+    final isFix = _isFixCommand(command);
 
     setState(() {
       _running = true;
@@ -134,7 +188,9 @@ class _CommandTerminalScreenState extends State<CommandTerminalScreen> {
     bool failed = false;
 
     try {
-      output = await _bridge.runTerminalCommand(command, rootMode: rootMode);
+      output = isFix
+          ? await _bridge.runFixCommand(command, rootMode: rootMode)
+          : await _bridge.runTerminalCommand(command, rootMode: rootMode);
     } catch (error) {
       output = describeError(error);
       failed = true;
@@ -192,9 +248,13 @@ class _CommandTerminalScreenState extends State<CommandTerminalScreen> {
   }
 
   void _showCommandList() {
-    final groups = <String, List<TerminalCommandInfo>>{};
+    final readGroups = <String, List<TerminalCommandInfo>>{};
     for (final command in _commands) {
-      groups.putIfAbsent(command.group, () => <TerminalCommandInfo>[]).add(command);
+      readGroups.putIfAbsent(command.group, () => <TerminalCommandInfo>[]).add(command);
+    }
+    final fixGroups = <String, List<TerminalCommandInfo>>{};
+    for (final command in _fixCommands) {
+      fixGroups.putIfAbsent(command.group, () => <TerminalCommandInfo>[]).add(command);
     }
 
     showModalBottomSheet<void>(
@@ -204,53 +264,92 @@ class _CommandTerminalScreenState extends State<CommandTerminalScreen> {
       builder: (sheetContext) {
         return DraggableScrollableSheet(
           expand: false,
-          initialChildSize: 0.75,
+          initialChildSize: 0.82,
           maxChildSize: 0.95,
           builder: (context, controller) {
-            return ListView(
-              controller: controller,
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-              children: [
-                const Text(
-                  'Available commands',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
+            return DefaultTabController(
+              length: 2,
+              child: Column(
+                children: [
+                  const TabBar(
+                    labelColor: Colors.white,
+                    unselectedLabelColor: Colors.white60,
+                    tabs: [
+                      Tab(text: 'Read'),
+                      Tab(text: 'Fix'),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'All of these only read information. To change '
-                  'something on the phone, use Repair Tools.',
-                  style: TextStyle(color: Colors.white60),
-                ),
-                for (final group in groups.entries) ...[
-                  SectionTitle(group.key),
-                  for (final command in group.value)
-                    ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        command.needsArgument
-                            ? '${command.name} <value>'
-                            : command.name,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontFamily: 'monospace',
+                  Expanded(
+                    child: TabBarView(
+                      children: [
+                        // Read tab
+                        ListView(
+                          controller: controller,
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                          children: [
+                            const Text(
+                              'Read commands only inspect. They cannot change the phone.',
+                              style: TextStyle(color: Colors.white60),
+                            ),
+                            for (final group in readGroups.entries) ...[
+                              SectionTitle(group.key),
+                              for (final command in group.value)
+                                ListTile(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  title: Text(
+                                    command.needsArgument ? '${command.name} <value>' : command.name,
+                                    style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
+                                  ),
+                                  subtitle: Text(command.description, style: const TextStyle(color: Colors.white60)),
+                                  onTap: () {
+                                    Navigator.pop(sheetContext);
+                                    _choose(command);
+                                  },
+                                ),
+                            ],
+                          ],
                         ),
-                      ),
-                      subtitle: Text(
-                        command.description,
-                        style: const TextStyle(color: Colors.white60),
-                      ),
-                      onTap: () {
-                        Navigator.pop(sheetContext);
-                        _choose(command);
-                      },
+                        // Fix tab
+                        ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                          children: [
+                            const Notice(
+                              icon: Icons.build,
+                              title: 'Fix commands change the phone',
+                              message: 'Each one asks before it runs and is saved to the service history.',
+                              color: AppColors.warning,
+                            ),
+                            for (final group in fixGroups.entries) ...[
+                              SectionTitle(group.key),
+                              for (final command in group.value)
+                                ListTile(
+                                  dense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: Icon(
+                                    command.risk == 'HIGH' ? Icons.warning : Icons.build,
+                                    color: AppColors.forRisk(command.risk),
+                                    size: 18,
+                                  ),
+                                  title: Text(
+                                    command.needsArgument ? '${command.name} <value>' : command.name,
+                                    style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
+                                  ),
+                                  subtitle: Text(command.description, style: const TextStyle(color: Colors.white60)),
+                                  trailing: Tag(command.risk, color: AppColors.forRisk(command.risk)),
+                                  onTap: () {
+                                    Navigator.pop(sheetContext);
+                                    _choose(command);
+                                  },
+                                ),
+                            ],
+                          ],
+                        ),
+                      ],
                     ),
+                  ),
                 ],
-              ],
+              ),
             );
           },
         );
@@ -379,9 +478,9 @@ class _CommandTerminalScreenState extends State<CommandTerminalScreen> {
                     child: _entries.isEmpty
                         ? const SingleChildScrollView(
                             child: Text(
-                              'Type a command, or tap the list icon above to '
-                              'see every command.\n\n'
-                              'Try:  device-info   battery   df -h   help',
+                              'Type a command, or tap the list icon above. '
+                              'Read = inspect, Fix = change (asks first).\n\n'
+                              'Try:  device-model   df -h   fix-caches   help',
                               style: TextStyle(
                                 color: Colors.white54,
                                 fontFamily: 'monospace',
@@ -415,10 +514,12 @@ class _CommandTerminalScreenState extends State<CommandTerminalScreen> {
                             Padding(
                               padding: const EdgeInsets.only(right: 6),
                               child: ActionChip(
+                                avatar: command.isFix
+                                    ? Icon(Icons.build, size: 14, color: AppColors.forRisk(command.risk))
+                                    : null,
                                 label: Text(command.name),
                                 tooltip: command.description,
-                                onPressed:
-                                    _running ? null : () => _choose(command),
+                                onPressed: _running ? null : () => _choose(command),
                               ),
                             )
                         else
@@ -428,8 +529,7 @@ class _CommandTerminalScreenState extends State<CommandTerminalScreen> {
                               child: ActionChip(
                                 avatar: const Icon(Icons.history, size: 16),
                                 label: Text(command),
-                                onPressed:
-                                    _running ? null : () => _run(command),
+                                onPressed: _running ? null : () => _run(command),
                               ),
                             ),
                       ],
