@@ -15,8 +15,9 @@ No computer is needed.
 | Tool | What it does on the connected phone |
 | --- | --- |
 | **Connection** | USB and Wi-Fi sessions, approval prompt guidance, cancel, "continue over Wi-Fi" from a cable session |
+| **Debugging Service** | Full 26-check diagnosis (storage, memory, network, display, security…) with health score 0-100 and one-tap fixes — diagnose → fix → re-diagnose to verify |
 | **Diagnostics** | Device identity, battery, storage, memory, network, temperature, uptime, apps summary, full technician report |
-| **Repair Tools** | 34 guided services (apps, network, storage, display, power). Each one explains itself, asks first, is checked afterwards and is recorded |
+| **Repair Tools** | 68 guided services (apps, network, storage, display, system, audio, power). Each one explains itself, asks first, is checked afterwards and is recorded |
 | **Hardware Check** | Screen, input devices, sensors, battery, storage, cameras, radios, boot state and thermal status with a verdict each, plus eight checks the technician performs by hand and records |
 | **App Workbench** | Why one app misbehaves: version, standby bucket, background restriction, the services it keeps, its crashes and ANRs. Four repairs for that app only |
 | **Bootloader** | Talks fastboot to a phone in bootloader mode: reads product, serial, lock state, slot and partition table; writes one image to boot, init_boot, recovery, dtbo, vbmeta or vendor_boot |
@@ -25,13 +26,14 @@ No computer is needed.
 | **Apps** | List, inspect, back up the APK (verified by size and SHA-256), stop, disable, clear data, uninstall |
 | **File Manager** | Browse shared storage, copy a file to this phone or send one to the connected phone |
 | **Security Center** | Read-only audit with a score: patch age, root, bootloader, encryption, screen lock, risky settings, app sources |
-| **Command Terminal** | A fixed list of read-only inspection commands. Free-form shell text is refused |
+| **Command Terminal** | 77 read + 62 fix commands (139 total) in two sealed catalogs. Read never mutates; fix requires confirmation and is history-logged. Free-form shell is refused |
 | **Repair History** | Every report and repair with the phone it was done on; export as text |
 
-The dashboard groups the tools: **Diagnose** (Diagnostics, Hardware
-Check, Security Center, Command Terminal), **Repair** (Repair Tools, App
-Workbench, Apps, File Manager, Reset & Wipe), **Firmware** (Bootloader,
-Update from ADB) and **This phone** (the workstation's own tools).
+The dashboard groups the tools: **Diagnose** (Debugging Service,
+Diagnostics, Hardware Check, Security Center, Command Terminal), **Repair**
+(Repair Tools, App Workbench, Apps, File Manager, Reset & Wipe),
+**Firmware** (Bootloader, Update from ADB) and **This phone** (the
+workstation's own tools).
 
 Diagnostics can also report on the workstation phone itself, and "Apps
 on This Phone" manages its own apps.
@@ -131,30 +133,28 @@ and put `release.keystore` in `android/app/`.
 
 ```
 lib/
-  main.dart                    dashboard
+  main.dart                    dashboard (4 groups: Diagnose/Repair/Firmware/This phone)
   app/app_theme.dart           colours and shared widgets
-  services/device_bridge.dart  the only place that talks to native code
-  screens/                     one file per tool
+  services/device_bridge.dart  the only place that talks to native code (models + parsers)
+  screens/                     one file per tool (incl. debugging_service_screen.dart)
 android/app/src/main/kotlin/.../
-  MainActivity.kt              routes requests, nothing else
-  Adb*.kt                      ADB engine: protocol, USB and TCP transports,
-                               authentication, streams, shell, file sync
-  Target*.kt, SecurityAudit.kt, RepairServices.kt, TerminalCommands.kt,
-  HardwareInspector.kt, AppDiagnosis.kt
+  MainActivity.kt              routes requests + history logging
+  Adb*.kt                      ADB engine: protocol, USB/TCP transports, auth, streams, shell, file sync
+  Target*.kt, SecurityAudit.kt, RepairServices.kt (68), TerminalCommands.kt (77+62),
+  HardwareInspector.kt, AppDiagnosis.kt, ServiceDiagnosis.kt (26 checks, score 0-100)
                                tools that work on the connected phone
-  Fastboot*.kt                 the fastboot engine and its USB link
+  Fastboot*.kt                 fastboot engine + USB link
   Local*.kt, Apk*.kt, Application*.kt, Usb*.kt
                                tools that work on the workstation phone
-android/app/src/test/          native tests, run against a simulated phone
-test/                          Dart tests
+android/app/src/test/          11 native test suites vs simulated phone
+test/                          Dart widget + parser tests (35+ screens)
 ```
 
 Safety rules built into the native side:
 
-- The terminal accepts only its built-in read-only commands; arguments
-  are validated and quoted.
-- Repairs run only from a fixed catalog, need explicit confirmation, and
-  refuse protected and system packages where that would be harmful.
+- The terminal has two sealed catalogs: 77 read (never mutate) and 62 fix (confirmation-gated, isFix=true, HIGH/MEDIUM risk badges). Free-form shell is refused; read can never resolve to fix (`resolve()` vs `resolveFix()`).
+- Repairs run only from a fixed 68-service catalog, need explicit confirmation, and
+  refuse protected (`android`, `com.android.systemui`…) and system packages where harmful. Every fix writes a `RepairHistoryStore` record with device label/serial/link.
 - Copied files, APK backups and chosen firmware images stay in the app's
   private storage, are shared only through Android's share sheet, and are
   deleted after 24 h.

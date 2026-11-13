@@ -72,23 +72,23 @@ jobs:
       - name: Analyze Dart code
         run: |
           set -o pipefail
-          flutter analyze --no-fatal-infos --no-fatal-warnings 2>&1 | tee /tmp/logs/2-analyze.log
+          flutter analyze 2>&1 | tee /tmp/logs/2-analyze.log
 
       - name: Run Dart tests
         run: |
           set -o pipefail
           flutter test 2>&1 | tee /tmp/logs/3-dart-tests.log
 
-      - name: Build APK
-        run: |
-          set -o pipefail
-          flutter build apk --release 2>&1 | tee /tmp/logs/4-build.log
-
       - name: Run native engine tests
         working-directory: android
         run: |
           set -o pipefail
-          ./gradlew :app:testDebugUnitTest --console=plain 2>&1 | tee /tmp/logs/5-native-tests.log
+          ./gradlew :app:testDebugUnitTest --console=plain 2>&1 | tee /tmp/logs/4-native-tests.log
+
+      - name: Build APK
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee /tmp/logs/5-build.log
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
