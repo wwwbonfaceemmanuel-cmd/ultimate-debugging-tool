@@ -242,6 +242,56 @@ class RepairServices(private val runner: AdbShellRunner) {
                 "Restarts into the bootloader / download mode for firmware work.",
                 "The phone stays in this mode until restarted with its buttons.",
                 endsSession = true
+            ),
+
+            // Composite fixes: several small repairs in one guided step.
+            Service(
+                "fix-no-internet", "Fix 'connected but no internet'", NETWORK, Risk.LOW, false, true,
+                "Resets Private DNS, removes any leftover proxy, and turns automatic date and time back on. " +
+                    "These three settings cause most 'no internet' faults."
+            ),
+            Service(
+                "reset-network", "Reset all connections", NETWORK, Risk.LOW, false, true,
+                "Restarts Wi-Fi, mobile data and Bluetooth together. " +
+                    "Use when every connection is stuck at once.",
+                "If you are connected by Wireless ADB, the session will drop."
+            ),
+            Service(
+                "free-storage", "Free up storage (all safe steps)", STORAGE, Risk.LOW, false, true,
+                "Clears app caches, empties the log buffers, and runs Android storage maintenance. " +
+                    "No personal data is removed."
+            ),
+            Service(
+                "kill-background-apps", "Stop all background apps", STORAGE, Risk.LOW, false, true,
+                "Stops every background app to free memory on a slow phone. " +
+                    "Apps reopen when they are needed again."
+            ),
+            Service(
+                "reset-screen-timeout", "Reset screen timeout", DISPLAY, Risk.LOW, false, true,
+                "Returns the screen timeout to 30 seconds."
+            ),
+            Service(
+                "enable-auto-brightness", "Turn on auto-brightness", DISPLAY, Risk.LOW, false, true,
+                "Turns adaptive (auto) brightness back on."
+            ),
+            Service(
+                "reset-font-scale", "Reset text size", DISPLAY, Risk.LOW, false, true,
+                "Returns the text size to normal (1.0)."
+            ),
+            Service(
+                "disable-battery-saver", "Turn Battery Saver off", SYSTEM, Risk.LOW, false, true,
+                "Switches Battery Saver off so the phone runs at full speed."
+            ),
+            Service(
+                "enable-battery-saver", "Turn Battery Saver on", SYSTEM, Risk.LOW, false, true,
+                "Switches Battery Saver on to stretch the battery."
+            ),
+            Service(
+                "reset-app-ops", "Reset app special access", APPS, Risk.MEDIUM, false, true,
+                "Returns every app's special access (background use, notifications, overlays) to its default. " +
+                    "Apps will ask again when needed.",
+                "Affects all apps. The owner may need to allow background use again.",
+                minSdk = 23
             )
         )
 
@@ -917,6 +967,162 @@ class RepairServices(private val runner: AdbShellRunner) {
                         else -> "The phone is restarting into the bootloader."
                     },
                     "The restart request was sent. Reconnect after the phone has started."
+                )
+            }
+
+            "fix-no-internet" -> {
+                val steps = ArrayList<String>()
+
+                requireSuccess(
+                    shell("settings put global private_dns_mode opportunistic"),
+                    "Private DNS could not be changed."
+                )
+                steps.add("Private DNS set to Automatic")
+
+                requireSuccess(
+                    shell(
+                        "settings put global http_proxy :0; " +
+                            "settings delete global global_http_proxy_host; " +
+                            "settings delete global global_http_proxy_port; " +
+                            "settings delete global global_http_proxy_exclusion_list"
+                    ),
+                    "The proxy setting could not be changed."
+                )
+                steps.add("Proxy removed")
+
+                requireSuccess(
+                    shell("settings put global auto_time 1; settings put global auto_time_zone 1"),
+                    "Automatic time could not be switched on."
+                )
+                steps.add("Automatic date and time on")
+
+                done(
+                    "The three most common 'no internet' causes were fixed.",
+                    "Done: ${steps.joinToString(", ")}. " +
+                        "Test the internet on the phone now. If it still fails, " +
+                        "restart Wi-Fi or check the router and SIM."
+                )
+            }
+
+            "reset-network" -> {
+                requireSuccess(shell("svc wifi disable"), "Wi-Fi could not be switched off.")
+                requireSuccess(shell("svc data disable"), "Mobile data could not be switched off.")
+                shell("svc bluetooth disable 2>/dev/null || cmd bluetooth_manager disable")
+                shell("sleep 3")
+                requireSuccess(shell("svc wifi enable"), "Wi-Fi could not be switched on.")
+                requireSuccess(shell("svc data enable"), "Mobile data could not be switched on.")
+                shell("svc bluetooth enable 2>/dev/null || cmd bluetooth_manager enable")
+                shell("sleep 2")
+                done(
+                    "Wi-Fi, mobile data and Bluetooth were restarted.",
+                    "Checked: Wi-Fi reads '${setting("global", "wifi_on")}', " +
+                        "mobile data reads '${setting("global", "mobile_data")}'. " +
+                        "Allow up to a minute for connections to return."
+                )
+            }
+
+            "free-storage" -> {
+                val before = freeDataKb()
+
+                requireSuccess(
+                    shell("pm trim-caches 4096G", 180000L),
+                    "The phone refused to clear caches."
+                )
+                requireSuccess(shell("logcat -c"), "The log buffers could not be cleared.")
+                shell("sm idle-maint run 2>&1 || sm fstrim 2>&1", 300000L)
+
+                val after = freeDataKb()
+
+                done(
+                    "App caches were cleared, logs emptied, and storage maintenance ran.",
+                    if (before != null && after != null) {
+                        val gained = (after - before).coerceAtLeast(0)
+                        "Free space before: ${ShellSupport.formatBytes(before * 1024)}, " +
+                            "after: ${ShellSupport.formatBytes(after * 1024)} " +
+                            "(recovered ${ShellSupport.formatBytes(gained * 1024)})."
+                    } else {
+                        "The phone accepted every step. Check Settings > Storage for the new free space."
+                    }
+                )
+            }
+
+            "kill-background-apps" -> {
+                requireSuccess(
+                    shell("am kill-all"),
+                    "Background apps could not be stopped on this phone."
+                )
+                done(
+                    "All background apps were stopped.",
+                    "Memory is freed. Apps will reopen when they are needed. " +
+                        "If the phone is still slow, check storage and battery temperature."
+                )
+            }
+
+            "reset-screen-timeout" -> {
+                requireSuccess(
+                    shell("settings put system screen_off_timeout 30000"),
+                    "The screen timeout could not be changed."
+                )
+                done(
+                    "The screen timeout was returned to 30 seconds.",
+                    "Checked: the setting now reads '${setting("system", "screen_off_timeout")}' milliseconds."
+                )
+            }
+
+            "enable-auto-brightness" -> {
+                requireSuccess(
+                    shell("settings put system screen_brightness_mode 1"),
+                    "Auto-brightness could not be switched on."
+                )
+                done(
+                    "Auto-brightness was switched on.",
+                    "Checked: the setting now reads '${setting("system", "screen_brightness_mode")}'."
+                )
+            }
+
+            "reset-font-scale" -> {
+                requireSuccess(
+                    shell("settings put system font_scale 1.0"),
+                    "The text size could not be changed."
+                )
+                done(
+                    "The text size was returned to normal.",
+                    "Checked: the setting now reads '${setting("system", "font_scale")}'."
+                )
+            }
+
+            "disable-battery-saver" -> {
+                requireSuccess(
+                    shell("settings put global low_power 0"),
+                    "Battery Saver could not be switched off."
+                )
+                done(
+                    "Battery Saver was switched off.",
+                    "Checked: the setting now reads '${setting("global", "low_power")}'. " +
+                        "The phone now runs at full speed."
+                )
+            }
+
+            "enable-battery-saver" -> {
+                requireSuccess(
+                    shell("settings put global low_power 1"),
+                    "Battery Saver could not be switched on."
+                )
+                done(
+                    "Battery Saver was switched on.",
+                    "Checked: the setting now reads '${setting("global", "low_power")}'. " +
+                        "The phone will save battery until it is switched off again."
+                )
+            }
+
+            "reset-app-ops" -> {
+                requireSuccess(
+                    shell("cmd appops reset", 60000L),
+                    "App special access could not be reset on this Android version."
+                )
+                done(
+                    "Every app's special access was returned to its default.",
+                    "The phone accepted the reset. Apps will ask again when they need access."
                 )
             }
 

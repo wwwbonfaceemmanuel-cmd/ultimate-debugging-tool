@@ -290,13 +290,109 @@ class TerminalCommandInfo {
   final String description;
   final String group;
   final bool needsArgument;
+  final String risk;
+  final bool isFix;
 
   const TerminalCommandInfo({
     required this.name,
     required this.description,
     required this.group,
     required this.needsArgument,
+    this.risk = 'LOW',
+    this.isFix = false,
   });
+
+  factory TerminalCommandInfo.fromMap(Map<String, dynamic> map) {
+    return TerminalCommandInfo(
+      name: asText(map['name']),
+      description: asText(map['description']),
+      group: asText(map['group'], 'General'),
+      needsArgument: asBool(map['needsArgument']),
+      risk: asText(map['risk'], 'LOW'),
+      isFix: asBool(map['isFix']),
+    );
+  }
+}
+
+class ServiceCheck {
+  final String id;
+  final String title;
+  final String status;
+  final String detail;
+  final String evidence;
+  final String? fixId;
+  final String fixTitle;
+  final bool autoFixable;
+
+  const ServiceCheck({
+    required this.id,
+    required this.title,
+    required this.status,
+    required this.detail,
+    required this.evidence,
+    required this.fixId,
+    required this.fixTitle,
+    required this.autoFixable,
+  });
+
+  factory ServiceCheck.fromMap(Map<String, dynamic> map) {
+    return ServiceCheck(
+      id: asText(map['id']),
+      title: asText(map['title']),
+      status: asText(map['status'], 'OK'),
+      detail: asText(map['detail']),
+      evidence: asText(map['evidence']),
+      fixId: asText(map['fixId']).isEmpty ? null : asText(map['fixId']),
+      fixTitle: asText(map['fixTitle']),
+      autoFixable: asBool(map['autoFixable']),
+    );
+  }
+
+  bool get isProblem => status != 'OK';
+  bool get isCritical => status == 'CRITICAL' || status == 'FAULT';
+}
+
+class ServiceDiagnosisResult {
+  final int score;
+  final String verdict;
+  final String summary;
+  final int faultCount;
+  final int attentionCount;
+  final int fixableCount;
+  final List<ServiceCheck> checks;
+  final String report;
+
+  const ServiceDiagnosisResult({
+    this.score = 0,
+    this.verdict = '',
+    this.summary = '',
+    this.faultCount = 0,
+    this.attentionCount = 0,
+    this.fixableCount = 0,
+    this.checks = const <ServiceCheck>[],
+    this.report = '',
+  });
+
+  factory ServiceDiagnosisResult.fromMap(Map<String, dynamic> map) {
+    final checks = <ServiceCheck>[];
+    for (final item in asMapList(map['checks'])) {
+      checks.add(ServiceCheck.fromMap(item));
+    }
+    return ServiceDiagnosisResult(
+      score: asInt(map['score']),
+      verdict: asText(map['verdict']),
+      summary: asText(map['summary']),
+      faultCount: asInt(map['faultCount']),
+      attentionCount: asInt(map['attentionCount']),
+      fixableCount: asInt(map['fixableCount']),
+      checks: checks,
+      report: asText(map['report']),
+    );
+  }
+
+  List<ServiceCheck> get problems =>
+      checks.where((c) => c.isProblem).toList();
+  List<ServiceCheck> get passed => checks.where((c) => !c.isProblem).toList();
 }
 
 class RepairServiceInfo {
@@ -1101,14 +1197,17 @@ class DeviceBridge {
     final result = await _channel.invokeMethod<dynamic>('getTerminalCommands');
     final commands = <TerminalCommandInfo>[];
     for (final item in asMapList(result)) {
-      commands.add(
-        TerminalCommandInfo(
-          name: asText(item['name']),
-          description: asText(item['description']),
-          group: asText(item['group'], 'General'),
-          needsArgument: asBool(item['needsArgument']),
-        ),
-      );
+      commands.add(TerminalCommandInfo.fromMap(item));
+    }
+    return commands;
+  }
+
+  Future<List<TerminalCommandInfo>> getTerminalFixCommands() async {
+    final result =
+        await _channel.invokeMethod<dynamic>('getTerminalFixCommands');
+    final commands = <TerminalCommandInfo>[];
+    for (final item in asMapList(result)) {
+      commands.add(TerminalCommandInfo.fromMap(item));
     }
     return commands;
   }
@@ -1122,6 +1221,23 @@ class DeviceBridge {
       <String, dynamic>{'command': command},
     );
     return asText(result, 'Command completed without output.');
+  }
+
+  Future<String> runFixCommand(
+    String command, {
+    required bool rootMode,
+  }) async {
+    final result = await _channel.invokeMethod<dynamic>(
+      rootMode ? 'executeRootFixCommand' : 'executeFixCommand',
+      <String, dynamic>{'command': command, 'confirmed': true},
+    );
+    return asText(result, 'Command completed without output.');
+  }
+
+  Future<ServiceDiagnosisResult> runServiceDiagnosis() async {
+    final result =
+        await _channel.invokeMethod<dynamic>('runServiceDiagnosis');
+    return ServiceDiagnosisResult.fromMap(asMap(result));
   }
 
   // ----- Repair services -----

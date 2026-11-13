@@ -6,6 +6,7 @@ import 'screens/app_workbench_screen.dart';
 import 'screens/bootloader_screen.dart';
 import 'screens/command_terminal_screen.dart';
 import 'screens/connection_screen.dart';
+import 'screens/debugging_service_screen.dart';
 import 'screens/diagnostics_screen.dart';
 import 'screens/file_manager_screen.dart';
 import 'screens/hardware_check_screen.dart';
@@ -65,6 +66,13 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   static final List<ToolItem> _diagnoseTools = [
     ToolItem(
+      title: 'Debugging Service',
+      description: 'Full diagnosis with one-tap fixes for every fault.',
+      icon: Icons.health_and_safety,
+      color: Colors.orangeAccent,
+      builder: (context) => const DebuggingServiceScreen(),
+    ),
+    ToolItem(
       title: 'Diagnostics',
       description: 'Battery, storage, memory, network and more.',
       icon: Icons.monitor_heart,
@@ -87,7 +95,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ),
     ToolItem(
       title: 'Command Terminal',
-      description: 'Read-only inspection commands.',
+      description: 'Read and fix commands for the connected phone.',
       icon: Icons.terminal,
       color: Colors.blueGrey,
       builder: (context) => const CommandTerminalScreen(),
