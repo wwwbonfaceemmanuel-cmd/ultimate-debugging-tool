@@ -904,10 +904,8 @@ class RepairServices(private val runner: AdbShellRunner, private val filesDir: j
                 } else throw RepairException("REPAIR_NOT_ALLOWED", "Not flagged")
             }
             "fix-virus-remove-admin" -> {
-                // dpm remove-active-admin requires device admin; try cmd device_policy
                 shell("dpm remove-active-admin ${ShellSupport.quote(target)} 2>&1; cmd device_policy remove-active-admin ${ShellSupport.quote(target)} 2>/dev/null", 15000L)
-                done("Device admin removal requested.", "Check Settings > Device admins — then quarantine the app.")
-                Outcome(service, target, "Device admin removal requested.", "Verify in Settings, then quarantine.")
+                Outcome(service, target, "Device admin removal requested.", "Verify in Settings > Device admins, then quarantine.")
             }
 
             else -> throw RepairException(
