@@ -182,6 +182,22 @@ class _BootloaderScreenState extends State<BootloaderScreen> {
 
     if (!agreed || !mounted) return;
 
+    // Backup-first guard: show report and record note before actual flash
+    try {
+      final guard = await _bridge.prepareFlashGuard(_partition, asText(image['path']));
+      if (!mounted) return;
+      final ok = await confirmAction(
+        context,
+        title: 'Backup check before flash',
+        message: guard,
+        confirmLabel: 'Flash anyway',
+      );
+      if (!ok || !mounted) return;
+      await _bridge.recordFlashBackupNote(_partition, 'User confirmed flash of $_partition via bootloader');
+    } catch (e) {
+      debugPrint('Flash guard skipped: $e');
+    }
+
     setState(() => _flashing = true);
 
     try {
